@@ -340,4 +340,3 @@ func main() {
 }
 
 // TBD: at what point should this tool be broken up into multiple files
-// TODO: README
