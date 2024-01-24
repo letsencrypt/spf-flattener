@@ -1,3 +1,3 @@
 module github.com/letsencrypt/spf-flattener
 
-go 1.18
+go 1.21

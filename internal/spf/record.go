@@ -1,0 +1,243 @@
+package spf
+
+import (
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+type RootSPF struct {
+	RootDomain   string
+	AllMechanism string
+	MapIPs       map[string]bool
+	MapNonflat   map[string]bool
+	LookupIF     Lookup
+}
+
+type Lookup interface {
+	LookupTXT(string) ([]string, error)
+	LookupIP(string) ([]net.IP, error)
+	LookupMX(string) ([]*net.MX, error)
+}
+
+func writeIPMech(ip net.IP, prefix string) string {
+	IPV := map[int]string{
+		4:  "4",
+		16: "6",
+	}
+	return "ip" + IPV[len(ip)] + ":" + ip.String() + prefix
+}
+
+// SPF FLATTENING FUNCTIONS ===================================================================
+
+// Return the SPF record for the given domain
+func (r *RootSPF) GetDomainSPFRecord(domain string) (string, error) {
+	txtRecords, err := r.LookupIF.LookupTXT(domain)
+	if err != nil {
+		return "", fmt.Errorf("could not look up SPF record for %s:\n %s", domain, err)
+	}
+	for _, record := range txtRecords {
+		// TBD: check that only one SPF record lookupexists for domain and fail otherwise?
+		if regexp.MustCompile(`^v=spf1.*$`).MatchString(record) {
+			slog.Debug("Found SPF record", "domain", domain, "spf_record", record)
+			return record, nil
+		}
+	}
+	return "", fmt.Errorf("no SPF record found for %s", domain)
+}
+
+// If provided SPF record is blank, lookup and return SPF record for domain
+// Otherwise, check that given record matches expected format and return that
+func (r *RootSPF) CheckSPFRecord(domain, spfRecord string) (string, error) {
+	if spfRecord == "" {
+		record, err := r.GetDomainSPFRecord(domain)
+		if err != nil {
+			return "", fmt.Errorf("could not get SPF record for %s:\n %s", domain, err)
+		}
+		return record, nil
+	}
+	spfRecord = strings.ReplaceAll(spfRecord, "\n", " ")
+	if regexp.MustCompile(`^v=spf1.*$`).MatchString(spfRecord) {
+		return spfRecord, nil
+	}
+	return "", fmt.Errorf("SPF record for %s did not match expected format. Got '%s'", domain, spfRecord)
+}
+
+// Check or lookup SPF record for domain, then parse each mechanism.
+// This runs recursively until every mechanism is added either to
+// ALL_MECHANISM, MAP_IPS, or MAP_NONFLAT
+func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
+	slog.Debug("--- Flattening domain ---", "domain", domain)
+	spfRecord, err := r.CheckSPFRecord(domain, spfRecord)
+	if err != nil {
+		return fmt.Errorf("invalid SPF record for %s:\n %s", domain, err)
+	}
+	containsAll := regexp.MustCompile(`^.* (\+|-|~|\?)?all$`).MatchString(spfRecord)
+	for _, mechanism := range strings.Split(spfRecord, " ")[1:] {
+		// TODO: modifiers (+-~?) for mechanisms other than all
+		// Handle by passing modifier into flattened record or by only evaluating mechanism if +,? or no modifier?
+		isRedirect, err := r.ParseMechanism(strings.TrimSpace(mechanism), domain, containsAll)
+		if err != nil {
+			return fmt.Errorf("could not flatten SPF record for %s:\n %s", domain, err)
+		}
+		if isRedirect {
+			break
+		}
+	}
+	return nil
+}
+
+// Parse the given mechanism and dispatch it accordingly
+func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bool, error) {
+	switch {
+	// Copy `all` mechanism if set by ROOT_DOMAIN
+	case regexp.MustCompile(`^(\+|-|~|\?)?all`).MatchString(mechanism):
+		if domain == r.RootDomain {
+			slog.Debug("Setting `all` mechanism", "mechanism", mechanism)
+			r.AllMechanism = " " + mechanism
+		}
+	// Add IPv4 and IPv6 addresses to MAP_IPS
+	case regexp.MustCompile(`^ip(4|6):.*$`).MatchString(mechanism):
+		slog.Debug("Adding IP mechanism", "mechanism", mechanism)
+		r.MapIPs[mechanism] = true
+	// Convert A/AAAA and MX records, then add to MAP_IPS
+	case regexp.MustCompile(`^a$`).MatchString(mechanism): // a
+		return false, r.ConvertDomainToIP(domain, "")
+	case regexp.MustCompile(`^a/\d{1,3}`).MatchString(mechanism): // a/<prefix-length>
+		return false, r.ConvertDomainToIP(domain, mechanism[strings.Index(mechanism, "/"):])
+	case regexp.MustCompile(`^a:.*/\d{1,3}$`).MatchString(mechanism): // a:domain/<prefix-length>
+		return false, r.ConvertDomainToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
+	case regexp.MustCompile(`^a:.*$`).MatchString(mechanism): // a:domain
+		return false, r.ConvertDomainToIP(strings.SplitN(mechanism, ":", 2)[1], "")
+	case regexp.MustCompile(`^mx$`).MatchString(mechanism): // mx
+		return false, r.ConvertMxToIP(domain, "")
+	case regexp.MustCompile(`^mx/\d{1,3}`).MatchString(mechanism): // mx/<prefix-length>
+		return false, r.ConvertMxToIP(domain, mechanism[strings.Index(mechanism, "/"):])
+	case regexp.MustCompile(`^mx:.*/\d{1,3}$`).MatchString(mechanism): // mx:domain/<prefix-length>
+		return false, r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
+	case regexp.MustCompile(`mx:.*$`).MatchString(mechanism): // mx:domain
+		return false, r.ConvertMxToIP(strings.SplitN(mechanism, ":", 2)[1], "")
+	// Add ptr, exists, and exp mechanisms to r.mapNonflat
+	case regexp.MustCompile(`^ptr$`).MatchString(mechanism):
+		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
+		r.MapNonflat[mechanism+":"+domain] = true
+	case regexp.MustCompile(`^(ptr:|exists:|exp=).*$`).MatchString(mechanism):
+		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
+		r.MapNonflat[mechanism] = true
+	// Recursive call to flattenSPF on `include` mechanism
+	case regexp.MustCompile(`^include:.*$`).MatchString(mechanism):
+		return false, r.FlattenSPF(strings.SplitN(mechanism, ":", 2)[1], "")
+	// Recursive call to flattenSPF on `redirect` mechanism, but handle extra logic processing:
+	// 1) ignore `redirect` if SPF record includes an `all` mechanism, and
+	// 2) ignore all following mechanisms in the SPF record after `redirect`.
+	case regexp.MustCompile(`^redirect=.*$`).MatchString(mechanism):
+		if containsAll {
+			slog.Info("Skipping `redirect` modifier` because SPF record contains `all` mechanism", "skipped_redirect", mechanism)
+			return true, nil
+		}
+		return true, r.FlattenSPF(strings.SplitN(mechanism, "=", 2)[1], "")
+	// Return error if no match
+	default:
+		return false, fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
+	}
+	return false, nil
+}
+
+// Convert A/AAAA records to IPs and add them to MAP_IPS
+func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
+	slog.Debug("Looking up IP records for domain", "domain", domain)
+	ips, err := r.LookupIF.LookupIP(domain)
+	if err != nil {
+		return fmt.Errorf("could not lookup IPs for %s:\n %s", domain, err)
+	}
+	for _, ip := range ips {
+		slog.Debug("Adding IP mechanism", "mechanism", writeIPMech(ip, prefixLength))
+		r.MapIPs[writeIPMech(ip, prefixLength)] = true
+	}
+	return nil
+}
+
+// Convert MX records to domains then to IPs and add them to MAP_IPS
+func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
+	slog.Debug("Looking up MX records for domain", "domain", domain)
+	mxs, err := r.LookupIF.LookupMX(domain)
+	if err != nil {
+		return fmt.Errorf("could not lookup MX records for %s:\n %s", domain, err)
+	}
+	for _, mx := range mxs {
+		slog.Debug("Found MX record for domain", "mx_record", mx.Host)
+		r.ConvertDomainToIP(mx.Host, prefixLength)
+	}
+	return nil
+}
+
+// Flatten and write new SPF record for root domain by compiling ALL_MECHANISM, MAP_IPs, and MAP_NONFLAT
+func (r *RootSPF) WriteFlatSPF() string {
+	flatSPF := "v=spf1"
+	for ip := range r.MapIPs {
+		flatSPF += " " + ip
+	}
+	for nonflat := range r.MapNonflat {
+		flatSPF += " " + nonflat
+	}
+	flatSPF += r.AllMechanism
+	return flatSPF
+}
+
+// OUTPUT PROCESSING FUNCTIONS ================================================================
+
+// Compare intial and flattened SPF records by checking that they both
+// have the same entries regardless of order. Return any different entries.
+func CompareRecords(startSPF, endSPF string) (bool, string, string) {
+	startList, endList := strings.Split(startSPF, " "), strings.Split(endSPF, " ")
+	sort.Strings(startList)
+	sort.Strings(endList)
+	inStart, inEnd := "", ""
+	i, j := 0, 0
+	for i < len(startList) || j < (len(endList)) {
+		switch {
+		case (j == len(endList) && i < len(endList)) || (i < len(startList) && j < len(endList) && startList[i] < endList[j]):
+			inStart += " " + startList[i]
+			i++
+		case (i == len(startList) && j < len(endList)) || (i < len(startList) && j < len(endList) && startList[i] > endList[j]):
+			inEnd += " " + endList[j]
+			j++
+		default: // startList[i] == endList[j]
+			i++
+			j++
+		}
+	}
+	if len(inStart) == 0 && len(inEnd) == 0 {
+		return true, "", ""
+	}
+	return false, strings.TrimSpace(inStart), strings.TrimSpace(inEnd)
+}
+
+// PATCH the updated, flattened SPF record
+func UpdateSPFRecord(rootDomain, flatSPF, url, authEmail, authKey string) error {
+	payloadString := fmt.Sprintf("{\n  \"content\": \"%s\",\n  \"name\": \"%s\",\n  \"type\": \"TXT\",\n  \"comment\": \"Dynamically updated, flattened SPF record\"}", flatSPF, rootDomain)
+	payload := strings.NewReader(payloadString)
+
+	req, err := http.NewRequest("PATCH", url, payload)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-Auth-Email", authEmail)
+	req.Header.Add("X-Auth-Key", authKey)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return fmt.Errorf("failed to update SPF record. Got response: `%d` -- `%s`", res.StatusCode, res.Body)
+	}
+	return nil
+}
