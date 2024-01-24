@@ -1,6 +1,7 @@
 package spf
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -217,12 +218,27 @@ func CompareRecords(startSPF, endSPF string) (bool, string, string) {
 	return false, strings.TrimSpace(inStart), strings.TrimSpace(inEnd)
 }
 
+type PatchRequest struct {
+	Content string `json:"content"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Comment string `json:"comment"`
+}
+
 // PATCH the updated, flattened SPF record
 func UpdateSPFRecord(rootDomain, flatSPF, url, authEmail, authKey string) error {
-	payloadString := fmt.Sprintf("{\n  \"content\": \"%s\",\n  \"name\": \"%s\",\n  \"type\": \"TXT\",\n  \"comment\": \"Dynamically updated, flattened SPF record\"}", flatSPF, rootDomain)
-	payload := strings.NewReader(payloadString)
-
-	req, err := http.NewRequest("PATCH", url, payload)
+	// {\n  \"content\": \"<SPF_RECORD>\",\n  \"name\": \"<DOMAIN>\",\n  \"type\": \"TXT\",\n  \"comment\": \"Dynamically updated, flattened SPF record\"}
+	patchReq := PatchRequest{
+		Content: flatSPF,
+		Name:    rootDomain,
+		Type:    "TXT",
+		Comment: "Dynamically updated, flattened SPF record",
+	}
+	payload, err := json.MarshalIndent(patchReq, "", "  ")
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(payload)))
 	if err != nil {
 		return err
 	}
