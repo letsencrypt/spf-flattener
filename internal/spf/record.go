@@ -70,7 +70,7 @@ func (r *RootSPF) CheckSPFRecord(domain, spfRecord string) (string, error) {
 
 // Check or lookup SPF record for domain, then parse each mechanism.
 // This runs recursively until every mechanism is added either to
-// ALL_MECHANISM, MAP_IPS, or MAP_NONFLAT
+// r.AllMechanism, r.MapIPs, or r.MapNonflat
 func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	slog.Debug("--- Flattening domain ---", "domain", domain)
 	spfRecord, err := r.CheckSPFRecord(domain, spfRecord)
@@ -101,11 +101,11 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bo
 			slog.Debug("Setting `all` mechanism", "mechanism", mechanism)
 			r.AllMechanism = " " + mechanism
 		}
-	// Add IPv4 and IPv6 addresses to MAP_IPS
+	// Add IPv4 and IPv6 addresses to r.MapIPs
 	case regexp.MustCompile(`^ip(4|6):.*$`).MatchString(mechanism):
 		slog.Debug("Adding IP mechanism", "mechanism", mechanism)
 		r.MapIPs[mechanism] = true
-	// Convert A/AAAA and MX records, then add to MAP_IPS
+	// Convert A/AAAA and MX records, then add to r.MapIPs
 	case regexp.MustCompile(`^a$`).MatchString(mechanism): // a
 		return false, r.ConvertDomainToIP(domain, "")
 	case regexp.MustCompile(`^a/\d{1,3}`).MatchString(mechanism): // a/<prefix-length>
@@ -122,7 +122,7 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bo
 		return false, r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
 	case regexp.MustCompile(`mx:.*$`).MatchString(mechanism): // mx:domain
 		return false, r.ConvertMxToIP(strings.SplitN(mechanism, ":", 2)[1], "")
-	// Add ptr, exists, and exp mechanisms to r.mapNonflat
+	// Add ptr, exists, and exp mechanisms to r.MapNonflat
 	case regexp.MustCompile(`^ptr$`).MatchString(mechanism):
 		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
 		r.MapNonflat[mechanism+":"+domain] = true
@@ -148,7 +148,7 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bo
 	return false, nil
 }
 
-// Convert A/AAAA records to IPs and add them to MAP_IPS
+// Convert A/AAAA records to IPs and add them to r.MapIPs
 func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
 	slog.Debug("Looking up IP records for domain", "domain", domain)
 	ips, err := r.LookupIF.LookupIP(domain)
@@ -162,7 +162,7 @@ func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
 	return nil
 }
 
-// Convert MX records to domains then to IPs and add them to MAP_IPS
+// Convert MX records to domains then to IPs and add them to r.MapIPs
 func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
 	slog.Debug("Looking up MX records for domain", "domain", domain)
 	mxs, err := r.LookupIF.LookupMX(domain)
@@ -176,7 +176,7 @@ func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
 	return nil
 }
 
-// Flatten and write new SPF record for root domain by compiling ALL_MECHANISM, MAP_IPs, and MAP_NONFLAT
+// Flatten and write new SPF record for root domain by compiling r.AllMechanism, r.MapIPs, and r.MapNonflat
 func (r *RootSPF) WriteFlatSPF() string {
 	flatSPF := "v=spf1"
 	for ip := range r.MapIPs {
