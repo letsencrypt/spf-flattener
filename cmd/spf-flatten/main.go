@@ -82,11 +82,6 @@ func main() {
 
 	/// Do the stuff
 	r := spf.RootSPF{RootDomain: rootDomain, MapIPs: map[string]bool{}, MapNonflat: map[string]bool{}, LookupIF: netLookup{}}
-	initialSPF, err = r.CheckSPFRecord(r.RootDomain, initialSPF)
-	if err != nil {
-		slog.Error("Could not lookup SPF record for initial domain", "error", err)
-	}
-
 	if err = r.FlattenSPF(r.RootDomain, initialSPF); err != nil {
 		slog.Error("Could not flatten SPF record for initial domain", "error", err)
 		return
@@ -97,12 +92,17 @@ func main() {
 	slog.Info("Successfully flattened SPF record for initial domain", "flattened_record", flatSPF)
 
 	if warn {
-		same, inInitial, inFlat := spf.CompareRecords(initialSPF, flatSPF)
+		// Compare flattened SPF to SPF record currently set for r.RootDomain
+		currentSPF, err := r.GetDomainSPFRecord(r.RootDomain)
+		if err != nil {
+			slog.Error("Could not get current SPF record for initial domain", "error", err)
+		}
+		same, inCurrent, inFlat := spf.CompareRecords(currentSPF, flatSPF)
 		if same {
 			slog.Info("SPF record is unchanged")
 			return
 		}
-		slog.Warn("Flattened SPF record differs from intiail SPF record", "removed_from_initial", inInitial, "added_in_flattened", inFlat)
+		slog.Warn("Flattened SPF record differs from intiail SPF record", "removed_from_initial", inCurrent, "added_in_flattened", inFlat)
 	}
 	if dryrun {
 		return

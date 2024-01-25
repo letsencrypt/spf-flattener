@@ -129,10 +129,10 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bo
 	case regexp.MustCompile(`^(ptr:|exists:|exp=).*$`).MatchString(mechanism):
 		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
 		r.MapNonflat[mechanism] = true
-	// Recursive call to flattenSPF on `include` mechanism
+	// Recursive call to FlattenSPF on `include` mechanism
 	case regexp.MustCompile(`^include:.*$`).MatchString(mechanism):
 		return false, r.FlattenSPF(strings.SplitN(mechanism, ":", 2)[1], "")
-	// Recursive call to flattenSPF on `redirect` mechanism, but handle extra logic processing:
+	// Recursive call to FlattenSPF on `redirect` mechanism, but handle extra logic processing:
 	// 1) ignore `redirect` if SPF record includes an `all` mechanism, and
 	// 2) ignore all following mechanisms in the SPF record after `redirect`.
 	case regexp.MustCompile(`^redirect=.*$`).MatchString(mechanism):
