@@ -79,12 +79,24 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	}
 	containsAll := regexp.MustCompile(`^.* (\+|-|~|\?)?all$`).MatchString(spfRecord)
 	for _, mechanism := range strings.Split(spfRecord, " ")[1:] {
-		// TODO: modifiers (+-~?) for mechanisms other than all
-		// Handle by passing modifier into flattened record or by only evaluating mechanism if +,? or no modifier?
-		isRedirect, err := r.ParseMechanism(strings.TrimSpace(mechanism), domain, containsAll)
+		// If not `all`, skip mechanism if fail modifier (- or ~) and ignore modifier otherwise
+		if regexp.MustCompile(`^(\+|-|~|\?)$`).MatchString(mechanism[:1]) && !regexp.MustCompile(`^all$`).MatchString(mechanism[1:]) {
+			if regexp.MustCompile(`^(-|~)$`).MatchString(mechanism[:1]) {
+				continue
+			}
+			mechanism = mechanism[1:]
+		}
+		// Skip `redirect` if SPF record includes an `all` mechanism
+		isRedirect := regexp.MustCompile(`^redirect=.*$`).MatchString(mechanism)
+		if isRedirect && containsAll {
+			continue
+		}
+		// Parse mechanism
+		err := r.ParseMechanism(strings.TrimSpace(mechanism), domain)
 		if err != nil {
 			return fmt.Errorf("could not flatten SPF record for %s:\n %s", domain, err)
 		}
+		// Skip all mechanisms after `redirect`
 		if isRedirect {
 			break
 		}
@@ -93,7 +105,7 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 }
 
 // Parse the given mechanism and dispatch it accordingly
-func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bool, error) {
+func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 	switch {
 	// Copy `all` mechanism if set by ROOT_DOMAIN
 	case regexp.MustCompile(`^(\+|-|~|\?)?all`).MatchString(mechanism):
@@ -107,45 +119,36 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string, containsAll bool) (bo
 		r.MapIPs[mechanism] = true
 	// Convert A/AAAA and MX records, then add to r.MapIPs
 	case regexp.MustCompile(`^a$`).MatchString(mechanism): // a
-		return false, r.ConvertDomainToIP(domain, "")
+		return r.ConvertDomainToIP(domain, "")
 	case regexp.MustCompile(`^a/\d{1,3}`).MatchString(mechanism): // a/<prefix-length>
-		return false, r.ConvertDomainToIP(domain, mechanism[strings.Index(mechanism, "/"):])
-	case regexp.MustCompile(`^a:.*/\d{1,3}$`).MatchString(mechanism): // a:domain/<prefix-length>
-		return false, r.ConvertDomainToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
-	case regexp.MustCompile(`^a:.*$`).MatchString(mechanism): // a:domain
-		return false, r.ConvertDomainToIP(strings.SplitN(mechanism, ":", 2)[1], "")
+		return r.ConvertDomainToIP(domain, mechanism[strings.Index(mechanism, "/"):])
+	case regexp.MustCompile(`^a:.*/\d{1,3}$`).MatchString(mechanism): // a:<domain>/<prefix-length>
+		return r.ConvertDomainToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
+	case regexp.MustCompile(`^a:.*$`).MatchString(mechanism): // a:<domain>
+		return r.ConvertDomainToIP(strings.SplitN(mechanism, ":", 2)[1], "")
 	case regexp.MustCompile(`^mx$`).MatchString(mechanism): // mx
-		return false, r.ConvertMxToIP(domain, "")
+		return r.ConvertMxToIP(domain, "")
 	case regexp.MustCompile(`^mx/\d{1,3}`).MatchString(mechanism): // mx/<prefix-length>
-		return false, r.ConvertMxToIP(domain, mechanism[strings.Index(mechanism, "/"):])
-	case regexp.MustCompile(`^mx:.*/\d{1,3}$`).MatchString(mechanism): // mx:domain/<prefix-length>
-		return false, r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
-	case regexp.MustCompile(`mx:.*$`).MatchString(mechanism): // mx:domain
-		return false, r.ConvertMxToIP(strings.SplitN(mechanism, ":", 2)[1], "")
+		return r.ConvertMxToIP(domain, mechanism[strings.Index(mechanism, "/"):])
+	case regexp.MustCompile(`^mx:.*/\d{1,3}$`).MatchString(mechanism): // mx:<domain>/<prefix-length>
+		return r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
+	case regexp.MustCompile(`mx:.*$`).MatchString(mechanism): // mx:<domain>
+		return r.ConvertMxToIP(strings.SplitN(mechanism, ":", 2)[1], "")
 	// Add ptr, exists, and exp mechanisms to r.MapNonflat
 	case regexp.MustCompile(`^ptr$`).MatchString(mechanism):
-		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
+		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism+":"+domain)
 		r.MapNonflat[mechanism+":"+domain] = true
 	case regexp.MustCompile(`^(ptr:|exists:|exp=).*$`).MatchString(mechanism):
 		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
 		r.MapNonflat[mechanism] = true
-	// Recursive call to FlattenSPF on `include` mechanism
-	case regexp.MustCompile(`^include:.*$`).MatchString(mechanism):
-		return false, r.FlattenSPF(strings.SplitN(mechanism, ":", 2)[1], "")
-	// Recursive call to FlattenSPF on `redirect` mechanism, but handle extra logic processing:
-	// 1) ignore `redirect` if SPF record includes an `all` mechanism, and
-	// 2) ignore all following mechanisms in the SPF record after `redirect`.
-	case regexp.MustCompile(`^redirect=.*$`).MatchString(mechanism):
-		if containsAll {
-			slog.Info("Skipping `redirect` modifier` because SPF record contains `all` mechanism", "skipped_redirect", mechanism)
-			return true, nil
-		}
-		return true, r.FlattenSPF(strings.SplitN(mechanism, "=", 2)[1], "")
+	// Recursive call to FlattenSPF on `include` and `redirect` mechanism
+	case regexp.MustCompile(`^(include:|redirect=).*$`).MatchString(mechanism):
+		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "")
 	// Return error if no match
 	default:
-		return false, fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
+		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
 	}
-	return false, nil
+	return nil
 }
 
 // Convert A/AAAA records to IPs and add them to r.MapIPs

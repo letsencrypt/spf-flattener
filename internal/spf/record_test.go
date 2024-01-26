@@ -67,12 +67,12 @@ func (r *RootSPF) compareExpected(err error, expAll string, expIPs, expNF []stri
 func TestParseMechanismAll(t *testing.T) {
 	r := RootSPF{RootDomain: "myrootdomain", LookupIF: mockLookup{}}
 	// Test `all`` mechanism set if domain is root
-	_, err := r.ParseMechanism("~all", "myrootdomain", true)
+	err := r.ParseMechanism("~all", "myrootdomain")
 	if err = r.compareExpected(err, " ~all", []string{}, []string{}); err != nil {
 		t.Fatal(err)
 	}
 	// Test `all`` mechanism is ignored if domain is NOT root
-	_, err = r.ParseMechanism("-all", "NOTmyrootdomain", true)
+	err = r.ParseMechanism("-all", "NOTmyrootdomain")
 	if err = r.compareExpected(err, " ~all", []string{}, []string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestParseMechanismIP(t *testing.T) {
 	// Test ip mechanisms of the form `ip4:<ipaddr>`, `ip4:<ipaddr>/<prefix-length>, `ip6:<ipaddr>`, and `ip6:<ipaddr>/<prefix-length>`
 	ipMechs := []string{"ip4:abcd", "ip4:8.8.8.8", "ip6:efgh/36", "ip6:2001:0db8:85a3:0000:0000:8a2e:0370:7334", "ip6:11:22::33/128"}
 	for _, mech := range ipMechs {
-		_, err := r.ParseMechanism(mech, "", false)
+		err := r.ParseMechanism(mech, "")
 		if err = r.compareExpected(err, "", []string{mech}, []string{}); err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +105,7 @@ func TestParseMechanismA(t *testing.T) {
 		for _, ip := range IP_LOOKUP[testCase[2]] {
 			expIPs = append(expIPs, writeIPMech(ip, testCase[1]))
 		}
-		_, err := r.ParseMechanism(testCase[0], testCase[3], false)
+		err := r.ParseMechanism(testCase[0], testCase[3])
 		if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func TestParseMechanismMX(t *testing.T) {
 				expIPs = append(expIPs, writeIPMech(ip, testCase[1]))
 			}
 		}
-		_, err := r.ParseMechanism(testCase[0], testCase[3], false)
+		err := r.ParseMechanism(testCase[0], testCase[3])
 		if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
 			t.Fatal(err)
 		}
@@ -139,14 +139,14 @@ func TestParseMechanismMX(t *testing.T) {
 func TestParseMechanismNonFlat(t *testing.T) {
 	r := RootSPF{MapNonflat: map[string]bool{}, LookupIF: mockLookup{}}
 	// Test ptr mechanism of the form `ptr`
-	_, err := r.ParseMechanism("ptr", "domain", false)
+	err := r.ParseMechanism("ptr", "domain")
 	if err = r.compareExpected(err, "", []string{}, []string{"ptr:domain"}); err != nil {
 		t.Fatal(err)
 	}
 	// Test nonflat mechanisms of the form `ptr:<domain>`, `<exists:<domain>`, and `exp=<domain>`
 	nfMechs := []string{"ptr:example.com", "exists:yourdomain", "exp=explain.example.com"}
 	for _, nfMech := range nfMechs {
-		_, err := r.ParseMechanism(nfMech, "", false)
+		err := r.ParseMechanism(nfMech, "")
 		if err = r.compareExpected(err, "", []string{}, []string{nfMech}); err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +161,7 @@ func TestParseMechanismInclude(t *testing.T) {
 	for _, ip := range IP_LOOKUP[includeDomain] {
 		expIPs = append(expIPs, writeIPMech(ip, ""))
 	}
-	_, err := r.ParseMechanism("include:"+includeDomain, "notmydomain", false)
+	err := r.ParseMechanism("include:"+includeDomain, "notmydomain")
 	if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestParseMechanismRedirect(t *testing.T) {
 	r := RootSPF{MapIPs: map[string]bool{}, LookupIF: mockLookup{}}
 	// Test mechanism of the form `redirect=<domain>`
 	redirectDomain := "test.com" // SPF record is just ip4:10.10.10.10
-	_, err := r.ParseMechanism("redirect="+redirectDomain, "notmydomain", false)
+	err := r.ParseMechanism("redirect="+redirectDomain, "notmydomain")
 	if err = r.compareExpected(err, "", []string{"ip4:10.10.10.10"}, []string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestParseMechanismFails(t *testing.T) {
 	// Test that parseMechanism fails on unexpected mechanism or syntax error
 	noMatchRegex := regexp.MustCompile("^(received unexpected SPF mechanism or syntax:).*$")
 	for _, wrongMech := range []string{"redirect:domain", "include=anotherdomain", "ip:0.0.0.0", "1.1.1.1", "", "ip6", "exp:explanation", "notMechanism:hello"} {
-		_, err := r.ParseMechanism(wrongMech, "", false)
+		err := r.ParseMechanism(wrongMech, "")
 		if !noMatchRegex.MatchString(err.Error()) {
 			t.Fatalf("Expected `unexpected SPF mechanism or syntax` error, got `%s` instead", err)
 		}
@@ -195,7 +195,6 @@ func TestFlattenSPF(t *testing.T) {
 	r := RootSPF{MapIPs: map[string]bool{}, MapNonflat: map[string]bool{}, LookupIF: mockLookup{}}
 	// Test that SPF record with multiple different entries gets flattened as expected
 	domain, spf := "abcd.net", "v=spf1 ip4:0.0.0.0/24 include:example.com ip6:56:0::0:7 a mx:test.domain exists:somedomain.edu -all"
-	// ip4, ip6, exists provided
 	// include:example.com --> (mydomain spf --> a --> mydomain IPs) + exp=exp.example.com
 	// a --> abcd.net IPs
 	// mx:test.domain --> example.com IPs and info.info IPs
@@ -234,8 +233,36 @@ func TestFlattenRedirects(t *testing.T) {
 	if err = r.compareExpected(err, "", []string{"ip4:9.9.9.9"}, []string{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.MapIPs) > 1 {
+	if len(r.MapIPs) > 2 {
 		t.Fatal("Redirect should have been ignored since `all` mechanism in SPF record")
+	}
+}
+
+func TestFlattenModifiers(t *testing.T) {
+	// Test modifier logic
+	r := RootSPF{MapIPs: map[string]bool{}, MapNonflat: map[string]bool{}, LookupIF: mockLookup{}}
+	domain, spf := "somedomain", "v=spf1 -include:mydomain +ip4:9.8.7.6/54 ~exists:otherdomain ?mx:test.domain -all"
+	r.RootDomain = domain
+	expIPs := []string{"ip4:9.8.7.6/54"}
+	for _, d := range MX_LOOKUP["test.domain"] {
+		for _, ip := range IP_LOOKUP[d.Host] {
+			expIPs = append(expIPs, writeIPMech(ip, ""))
+		}
+	}
+	err := r.FlattenSPF(domain, spf)
+	if err = r.compareExpected(err, " -all", expIPs, []string{}); err != nil {
+		t.Fatal(err)
+	}
+	// Test IPs for `mydomain` are skipped because of fail modifier - on `include` mechanism
+	for _, ip := range IP_LOOKUP["mydomain"] {
+		if _, ok := r.MapIPs[writeIPMech(ip, "")]; ok {
+			t.Fatal("IP should have been ignored because its include modifier was `-`")
+		}
+		expIPs = append(expIPs, "-"+writeIPMech(ip, ""))
+	}
+	// Test `exists` mechanism skipped because of its fail modifier ~
+	if _, ok := r.MapNonflat["exists:otherdomain"]; ok {
+		t.Fatal("`exists` should have been ignored because its modifier was `~`")
 	}
 }
 
