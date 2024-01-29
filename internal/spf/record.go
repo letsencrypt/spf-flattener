@@ -70,7 +70,7 @@ func (r *RootSPF) CheckSPFRecord(domain, spfRecord string) (string, error) {
 
 // Check or lookup SPF record for domain, then parse each mechanism.
 // This runs recursively until every mechanism is added either to
-// r.AllMechanism, r.MapIPs, or r.MapNonflat
+// r.AllMechanism, r.MapIPs, or r.MapNonflat (or ignored)
 func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	slog.Debug("--- Flattening domain ---", "domain", domain)
 	spfRecord, err := r.CheckSPFRecord(domain, spfRecord)
@@ -106,6 +106,7 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 
 // Parse the given mechanism and dispatch it accordingly
 func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
+	lastSlashIndex := strings.LastIndex(mechanism, "/")
 	switch {
 	// Copy `all` mechanism if set by ROOT_DOMAIN
 	case regexp.MustCompile(`^(\+|-|~|\?)?all`).MatchString(mechanism):
@@ -121,17 +122,17 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 	case regexp.MustCompile(`^a$`).MatchString(mechanism): // a
 		return r.ConvertDomainToIP(domain, "")
 	case regexp.MustCompile(`^a/\d{1,3}`).MatchString(mechanism): // a/<prefix-length>
-		return r.ConvertDomainToIP(domain, mechanism[strings.Index(mechanism, "/"):])
+		return r.ConvertDomainToIP(domain, mechanism[1:])
 	case regexp.MustCompile(`^a:.*/\d{1,3}$`).MatchString(mechanism): // a:<domain>/<prefix-length>
-		return r.ConvertDomainToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
+		return r.ConvertDomainToIP(mechanism[strings.Index(mechanism, ":")+1:lastSlashIndex], mechanism[lastSlashIndex:])
 	case regexp.MustCompile(`^a:.*$`).MatchString(mechanism): // a:<domain>
 		return r.ConvertDomainToIP(strings.SplitN(mechanism, ":", 2)[1], "")
 	case regexp.MustCompile(`^mx$`).MatchString(mechanism): // mx
 		return r.ConvertMxToIP(domain, "")
 	case regexp.MustCompile(`^mx/\d{1,3}`).MatchString(mechanism): // mx/<prefix-length>
-		return r.ConvertMxToIP(domain, mechanism[strings.Index(mechanism, "/"):])
+		return r.ConvertMxToIP(domain, mechanism[2:])
 	case regexp.MustCompile(`^mx:.*/\d{1,3}$`).MatchString(mechanism): // mx:<domain>/<prefix-length>
-		return r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:strings.LastIndex(mechanism, "/")], mechanism[strings.LastIndex(mechanism, "/"):])
+		return r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:lastSlashIndex], mechanism[lastSlashIndex:])
 	case regexp.MustCompile(`mx:.*$`).MatchString(mechanism): // mx:<domain>
 		return r.ConvertMxToIP(strings.SplitN(mechanism, ":", 2)[1], "")
 	// Add ptr, exists, and exp mechanisms to r.MapNonflat
