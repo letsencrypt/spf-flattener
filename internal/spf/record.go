@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -19,7 +18,7 @@ func GetDomainSPFRecord(domain string, lookupIF Lookup) (string, error) {
 	}
 	for _, record := range txtRecords {
 		// TBD: check that only one SPF record lookupexists for domain and fail otherwise?
-		if regexp.MustCompile(`^v=spf1.*$`).MatchString(record) {
+		if strings.HasPrefix(record, "v=spf1") {
 			slog.Debug("Found SPF record", "domain", domain, "spf_record", record)
 			return record, nil
 		}
@@ -38,7 +37,7 @@ func CheckSPFRecord(domain, spfRecord string, lookupIF Lookup) (string, error) {
 		return record, nil
 	}
 	spfRecord = strings.ReplaceAll(spfRecord, "\n", " ")
-	if regexp.MustCompile(`^v=spf1.*$`).MatchString(spfRecord) {
+	if strings.HasPrefix(spfRecord, "v=spf1") {
 		return spfRecord, nil
 	}
 	return "", fmt.Errorf("SPF record for %s did not match expected format. Got '%s'", domain, spfRecord)

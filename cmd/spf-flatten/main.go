@@ -21,6 +21,11 @@ type flags struct {
 	authKey    string
 }
 
+var levelInfoRegex = regexp.MustCompile(`^((L|l)evel)?((I|i)nfo)$`)
+var levelWarnRegex = regexp.MustCompile(`^((L|l)evel)?((W|w)arn)$`)
+var levelErrorRegex = regexp.MustCompile(`^((L|l)evel)?((E|e)rror)$`)
+var levelDebugRegex = regexp.MustCompile(`^((L|l)evel)?((D|d)ebug)$`)
+
 // Parse, check, and return flag inputs
 func parseFlags() (flags, error) {
 	rootDomainF := flag.String("domain", "", "Initial domain to set SPF record for") // required
@@ -44,13 +49,13 @@ func parseFlags() (flags, error) {
 
 	// Set logLevel
 	switch {
-	case regexp.MustCompile(`^((L|l)evel)?((I|i)nfo)$`).MatchString(*logLevelF):
+	case levelInfoRegex.MatchString(*logLevelF):
 		f.logLevel = slog.LevelInfo
-	case regexp.MustCompile(`^((L|l)evel)?((W|w)arn)$`).MatchString(*logLevelF):
+	case levelWarnRegex.MatchString(*logLevelF):
 		f.logLevel = slog.LevelWarn
-	case regexp.MustCompile(`^((L|l)evel)?((E|e)rror)$`).MatchString(*logLevelF):
+	case levelErrorRegex.MatchString(*logLevelF):
 		f.logLevel = slog.LevelError
-	case regexp.MustCompile(`^((L|l)evel)?((D|d)ebug)$`).MatchString(*logLevelF):
+	case levelDebugRegex.MatchString(*logLevelF):
 		f.logLevel = slog.LevelDebug
 	default:
 		return flags{}, fmt.Errorf("Unexpected logLevel; must be one of `debug`, `info`, `warn` or `error`")
