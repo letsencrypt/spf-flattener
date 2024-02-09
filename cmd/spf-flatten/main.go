@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/letsencrypt/spf-flattener/internal/spf"
@@ -21,11 +20,6 @@ type flags struct {
 	authEmail  string
 	authKey    string
 }
-
-var levelInfoRegex = regexp.MustCompile(`^((L|l)evel)?((I|i)nfo)$`)
-var levelWarnRegex = regexp.MustCompile(`^((L|l)evel)?((W|w)arn)$`)
-var levelErrorRegex = regexp.MustCompile(`^((L|l)evel)?((E|e)rror)$`)
-var levelDebugRegex = regexp.MustCompile(`^((L|l)evel)?((D|d)ebug)$`)
 
 // Parse, check, and return flag inputs
 func parseFlags() (flags, error) {
@@ -52,18 +46,11 @@ func parseFlags() (flags, error) {
 	}
 
 	// Set logLevel
-	switch {
-	case levelInfoRegex.MatchString(*logLevelF):
-		f.logLevel = slog.LevelInfo
-	case levelWarnRegex.MatchString(*logLevelF):
-		f.logLevel = slog.LevelWarn
-	case levelErrorRegex.MatchString(*logLevelF):
-		f.logLevel = slog.LevelError
-	case levelDebugRegex.MatchString(*logLevelF):
-		f.logLevel = slog.LevelDebug
-	default:
-		return flags{}, fmt.Errorf("Unexpected logLevel; must be one of `debug`, `info`, `warn` or `error`")
+	logLevel, err := spf.GetLogLevel(*logLevelF)
+	if err != nil {
+		return flags{}, err
 	}
+	f.logLevel = logLevel
 
 	// Require url, authEmail, and authKey to be nonempty if dryrun is false
 	if !f.dryrun && (f.url == "" || f.authEmail == "" || f.authKey == "") {

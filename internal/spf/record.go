@@ -6,9 +6,30 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+var levelInfoRegex = regexp.MustCompile(`^((L|l)evel)?((I|i)nfo)$`)
+var levelWarnRegex = regexp.MustCompile(`^((L|l)evel)?((W|w)arn)$`)
+var levelErrorRegex = regexp.MustCompile(`^((L|l)evel)?((E|e)rror)$`)
+var levelDebugRegex = regexp.MustCompile(`^((L|l)evel)?((D|d)ebug)$`)
+
+func GetLogLevel(inputLevel string) (slog.Level, error) {
+	switch {
+	case levelInfoRegex.MatchString(inputLevel):
+		return slog.LevelInfo, nil
+	case levelWarnRegex.MatchString(inputLevel):
+		return slog.LevelWarn, nil
+	case levelErrorRegex.MatchString(inputLevel):
+		return slog.LevelError, nil
+	case levelDebugRegex.MatchString(inputLevel):
+		return slog.LevelDebug, nil
+	default:
+		return 0, fmt.Errorf("unexpected log level; must be one of `debug`, `info`, `warn` or `error`")
+	}
+}
 
 // Return the SPF record for the given domain
 func GetDomainSPFRecord(domain string, lookupIF Lookup) (string, error) {
