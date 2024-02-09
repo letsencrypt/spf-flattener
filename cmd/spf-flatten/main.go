@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/letsencrypt/spf-flattener/internal/spf"
 )
@@ -45,6 +46,9 @@ func parseFlags() (flags, error) {
 	// Require domain to be nonempty
 	if f.rootDomain == "" {
 		return flags{}, fmt.Errorf("must provide a domain to flatten SPF record for. Use '-domain <yourdomain>'")
+	}
+	if strings.Contains(f.rootDomain, " ") || strings.Contains(f.rootDomain, ",") {
+		return flags{}, fmt.Errorf("must provide only one domain for flattening")
 	}
 
 	// Set logLevel
@@ -105,6 +109,7 @@ func main() {
 		slog.Warn("Flattened SPF record differs from intiail SPF record", "removed_from_initial", inCurrent, "added_in_flattened", inFlat)
 	}
 	if inputs.dryrun {
+		slog.Info("Dryrun complete")
 		return
 	}
 

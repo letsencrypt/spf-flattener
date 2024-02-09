@@ -37,5 +37,3 @@ go run main.go --domain <domain> --intialSPF="<spfRecord>"
 Then once someone checks/approves of change, run once:
 ```
 go run main.go --domain <domain> --initialSPF "<spfRecord>" --dryrun false --warn false --url "<url>" --authEmail "<email>" --authKey "<key>"
-
-// TODO update this README
