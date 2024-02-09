@@ -155,7 +155,7 @@ func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
 	for _, mx := range mxs {
 		slog.Debug("Found MX record for domain", "mx_record", mx.Host)
 		if err := r.ConvertDomainToIP(mx.Host, prefixLength); err != nil {
-			return fmt.Errorf("could not lookup IPs for MX record `%s`:\n %s", mx.Host, err)
+			return fmt.Errorf("could not lookup IPs for MX record `%s`: %s\n", mx.Host, err)
 		}
 	}
 	return nil
