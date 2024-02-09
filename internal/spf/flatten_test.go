@@ -10,30 +10,30 @@ import (
 type mockLookup struct{}
 
 func (n mockLookup) LookupTXT(s string) ([]string, error) {
-	return TXT_LOOKUP[s], nil
+	return txtLookup[s], nil
 }
 func (n mockLookup) LookupIP(s string) ([]net.IP, error) {
-	return IP_LOOKUP[s], nil
+	return ipLookup[s], nil
 }
 func (n mockLookup) LookupMX(s string) ([]*net.MX, error) {
-	return MX_LOOKUP[s], nil
+	return mxLookup[s], nil
 }
 
-var TXT_LOOKUP = map[string][]string{
+var txtLookup = map[string][]string{
 	"mydomain":    {"NOT AN SPF RECORD", "v=spf1 a ~all"},
 	"test.com":    {"v=spf1 ip4:10.10.10.10", "exp='IDK why that failed, good luck'"},
 	"example.com": {"v=spf1 include:mydomain exp=exp.example.com"},
 	"nospf":       {"NOT AN SPF RECORD", "v=also not an spf record"},
 }
 
-var IP_LOOKUP = map[string][]net.IP{
+var ipLookup = map[string][]net.IP{
 	"mydomain":                               {net.IP{0, 0, 0, 0}, net.IP{1, 2, 3, 4}},
 	"example.com":                            {net.ParseIP("2001:db8::68")},
 	"abcd.net":                               {net.IP{12, 34, 56, 78}, net.ParseIP("2001:db8::1"), net.IP{6, 6, 6, 6}},
 	"info.info":                              {net.IP{1, 1, 1, 1}, net.IP{2, 2, 2, 2}, net.IP{3, 3, 3, 3}, net.ParseIP("1:2:3:4:5:6:7:8")},
 	"longer.domain/subdomain/subsubdomain/a": {net.ParseIP("1234:34::1")},
 }
-var MX_LOOKUP = map[string][]*net.MX{
+var mxLookup = map[string][]*net.MX{
 	"anotherdomain": {&net.MX{Host: "mydomain", Pref: 10}},
 	"test.org":      {&net.MX{Host: "example.com", Pref: 20}, &net.MX{Host: "abcd.net", Pref: 10}},
 	"test.domain":   {&net.MX{Host: "example.com", Pref: 10}, &net.MX{Host: "info.info", Pref: 30}},
@@ -98,7 +98,7 @@ func TestParseMechanismA(t *testing.T) {
 	for _, testCase := range testInputs {
 		r.MapIPs = map[string]bool{}
 		expIPs := []string{}
-		for _, ip := range IP_LOOKUP[testCase[2]] {
+		for _, ip := range ipLookup[testCase[2]] {
 			expIPs = append(expIPs, writeIPMech(ip, testCase[1]))
 		}
 		err := r.ParseMechanism(testCase[0], testCase[3])
@@ -120,8 +120,8 @@ func TestParseMechanismMX(t *testing.T) {
 	for _, testCase := range testInputs {
 		r.MapIPs = map[string]bool{}
 		expIPs := []string{}
-		for _, d := range MX_LOOKUP[testCase[2]] {
-			for _, ip := range IP_LOOKUP[d.Host] {
+		for _, d := range mxLookup[testCase[2]] {
+			for _, ip := range ipLookup[d.Host] {
 				expIPs = append(expIPs, writeIPMech(ip, testCase[1]))
 			}
 		}
@@ -156,7 +156,7 @@ func TestParseMechanismInclude(t *testing.T) {
 	// Test mechanism of the form `include:<domain>`
 	includeDomain := "mydomain" // SPF record is just `a`, so expect IPs for "mydomain"
 	expIPs := []string{}
-	for _, ip := range IP_LOOKUP[includeDomain] {
+	for _, ip := range ipLookup[includeDomain] {
 		expIPs = append(expIPs, writeIPMech(ip, ""))
 	}
 	err := r.ParseMechanism("include:"+includeDomain, "notmydomain")
@@ -178,11 +178,13 @@ func TestParseMechanismRedirect(t *testing.T) {
 func TestParseMechanismFails(t *testing.T) {
 	r := NewRootSPF("", mockLookup{})
 	// Test that parseMechanism fails on unexpected mechanism or syntax error
-	noMatchRegex := regexp.MustCompile("^(received unexpected SPF mechanism or syntax:).*$")
+	noMatchRegex := regexp.MustCompile(`^received unexpected SPF mechanism or syntax.*$`)
 	for _, wrongMech := range []string{"redirect:domain", "include=anotherdomain", "ip:0.0.0.0", "1.1.1.1", "", "ip6", "exp:explanation", "notMechanism:hello"} {
 		err := r.ParseMechanism(wrongMech, "")
 		if !noMatchRegex.MatchString(err.Error()) {
-			t.Fatalf("Expected `unexpected SPF mechanism or syntax` error, got `%s` instead", err)
+			fmt.Println(err.Error())
+			fmt.Println(noMatchRegex)
+			t.Fatalf("Expected `received unexpected SPF mechanism or syntax` error, got `%s` instead", err)
 		}
 	}
 }
@@ -198,7 +200,7 @@ func TestFlattenSPF(t *testing.T) {
 	expIPs := []string{"ip4:0.0.0.0/24", "ip6:56:0::0:7"}
 	expNFs := []string{"exists:somedomain.edu", "exp=exp.example.com"}
 	for _, d := range []string{"mydomain", "abcd.net", "info.info", "example.com"} {
-		for _, ip := range IP_LOOKUP[d] {
+		for _, ip := range ipLookup[d] {
 			expIPs = append(expIPs, writeIPMech(ip, ""))
 		}
 	}
@@ -213,7 +215,7 @@ func TestFlattenRedirects(t *testing.T) {
 	domain, spf := "somedomain", "v=spf1 ip4:9.9.9.9 redirect=mydomain ip6:2:2:2:2::::"
 	// Test that mechanisms after redirects are ignored
 	expIPs := []string{"ip4:9.9.9.9"}
-	for _, ip := range IP_LOOKUP["mydomain"] {
+	for _, ip := range ipLookup["mydomain"] {
 		expIPs = append(expIPs, writeIPMech(ip, ""))
 	}
 	err := r.FlattenSPF(domain, spf)
@@ -240,8 +242,8 @@ func TestFlattenModifiers(t *testing.T) {
 	domain, spf := "somedomain", "v=spf1 -include:mydomain +ip4:9.8.7.6/54 ~exists:otherdomain ?mx:test.domain -all"
 	r.RootDomain = domain
 	expIPs := []string{"ip4:9.8.7.6/54"}
-	for _, d := range MX_LOOKUP["test.domain"] {
-		for _, ip := range IP_LOOKUP[d.Host] {
+	for _, d := range mxLookup["test.domain"] {
+		for _, ip := range ipLookup[d.Host] {
 			expIPs = append(expIPs, writeIPMech(ip, ""))
 		}
 	}
@@ -250,7 +252,7 @@ func TestFlattenModifiers(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Test IPs for `mydomain` are skipped because of fail modifier - on `include` mechanism
-	for _, ip := range IP_LOOKUP["mydomain"] {
+	for _, ip := range ipLookup["mydomain"] {
 		if _, ok := r.MapIPs[writeIPMech(ip, "")]; ok {
 			t.Fatal("IP should have been ignored because its include modifier was `-`")
 		}

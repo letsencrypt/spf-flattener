@@ -126,7 +126,7 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "")
 	// Return error if no match
 	default:
-		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'\n", mechanism)
+		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
 	}
 	return nil
 }
