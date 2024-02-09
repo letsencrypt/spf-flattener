@@ -54,7 +54,7 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	slog.Debug("--- Flattening domain ---", "domain", domain)
 	spfRecord, err := CheckSPFRecord(domain, spfRecord, r.LookupIF)
 	if err != nil {
-		return fmt.Errorf("invalid SPF record for %s:\n %s", domain, err)
+		return fmt.Errorf("invalid SPF record for %s: %s\n", domain, err)
 	}
 	containsAll := regexp.MustCompile(`^.* (\+|-|~|\?)?all$`).MatchString(spfRecord)
 	for _, mechanism := range strings.Split(spfRecord, " ")[1:] {
@@ -73,7 +73,7 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 		// Parse mechanism
 		err := r.ParseMechanism(strings.TrimSpace(mechanism), domain)
 		if err != nil {
-			return fmt.Errorf("could not flatten SPF record for %s:\n %s", domain, err)
+			return fmt.Errorf("could not flatten SPF record for %s: %s\n", domain, err)
 		}
 		// Skip all mechanisms after `redirect`
 		if isRedirect {
@@ -126,7 +126,7 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "")
 	// Return error if no match
 	default:
-		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
+		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'\n", mechanism)
 	}
 	return nil
 }
@@ -136,7 +136,7 @@ func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
 	slog.Debug("Looking up IP records for domain", "domain", domain)
 	ips, err := r.LookupIF.LookupIP(domain)
 	if err != nil {
-		return fmt.Errorf("could not lookup IPs for %s:\n %s", domain, err)
+		return fmt.Errorf("could not lookup IPs for %s: %s\n", domain, err)
 	}
 	for _, ip := range ips {
 		slog.Debug("Adding IP mechanism", "mechanism", writeIPMech(ip, prefixLength))
@@ -150,7 +150,7 @@ func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
 	slog.Debug("Looking up MX records for domain", "domain", domain)
 	mxs, err := r.LookupIF.LookupMX(domain)
 	if err != nil {
-		return fmt.Errorf("could not lookup MX records for %s:\n %s", domain, err)
+		return fmt.Errorf("could not lookup MX records for %s: %s\n", domain, err)
 	}
 	for _, mx := range mxs {
 		slog.Debug("Found MX record for domain", "mx_record", mx.Host)

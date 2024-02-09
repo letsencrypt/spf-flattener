@@ -15,7 +15,7 @@ import (
 func GetDomainSPFRecord(domain string, lookupIF Lookup) (string, error) {
 	txtRecords, err := lookupIF.LookupTXT(domain)
 	if err != nil {
-		return "", fmt.Errorf("could not look up SPF record for %s:\n %s", domain, err)
+		return "", fmt.Errorf("could not look up SPF record for %s: %s\n", domain, err)
 	}
 	for _, record := range txtRecords {
 		// TBD: check that only one SPF record lookupexists for domain and fail otherwise?
@@ -33,7 +33,7 @@ func CheckSPFRecord(domain, spfRecord string, lookupIF Lookup) (string, error) {
 	if spfRecord == "" {
 		record, err := GetDomainSPFRecord(domain, lookupIF)
 		if err != nil {
-			return "", fmt.Errorf("could not get SPF record for %s:\n %s", domain, err)
+			return "", fmt.Errorf("could not get SPF record for %s: %s\n", domain, err)
 		}
 		return record, nil
 	}

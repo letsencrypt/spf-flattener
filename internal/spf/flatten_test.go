@@ -42,7 +42,7 @@ var MX_LOOKUP = map[string][]*net.MX{
 // Check if input error is nil, if r.ALlMechanism is expected, and if r.MapIPs and r.MapNonflat have the expected entries.
 func (r *RootSPF) compareExpected(err error, expAll string, expIPs, expNF []string) error {
 	if err != nil {
-		return fmt.Errorf("unexpected error:\n %s", err)
+		return fmt.Errorf("unexpected error: %s\n", err)
 	}
 	if r.AllMechanism != expAll {
 		return fmt.Errorf("expected `%s` for r.AllMechanism but got `%s`", expAll, r.AllMechanism)
