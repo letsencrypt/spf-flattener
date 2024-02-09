@@ -38,7 +38,7 @@ func parseFlags() (flags, error) {
 		url: *urlF, authEmail: *authEmailF, authKey: *authKeyF}
 
 	// Require domain to be nonempty
-	if *rootDomainF == "" {
+	if f.rootDomain == "" {
 		return flags{}, fmt.Errorf("must provide a domain to flatten SPF record for. Use '-domain <yourdomain>'")
 	}
 
