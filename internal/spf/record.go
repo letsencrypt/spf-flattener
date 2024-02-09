@@ -26,21 +26,12 @@ func GetDomainSPFRecord(domain string, lookupIF Lookup) (string, error) {
 	return "", fmt.Errorf("no SPF record found for %s", domain)
 }
 
-// If provided SPF record is blank, lookup and return SPF record for domain
-// Otherwise, check that given record matches expected format and return that
-func CheckSPFRecord(domain, spfRecord string, lookupIF Lookup) (string, error) {
-	if spfRecord == "" {
-		record, err := GetDomainSPFRecord(domain, lookupIF)
-		if err != nil {
-			return "", fmt.Errorf("could not get SPF record for %s: %s\n", domain, err)
-		}
-		return record, nil
-	}
-	spfRecord = strings.ReplaceAll(spfRecord, "\n", " ")
+// Check that given record matches expected format and return error otherwise
+func CheckSPFRecord(domain, spfRecord string, lookupIF Lookup) error {
 	if strings.HasPrefix(spfRecord, "v=spf1") {
-		return spfRecord, nil
+		return nil
 	}
-	return "", fmt.Errorf("SPF record for %s did not match expected format. Got '%s'", domain, spfRecord)
+	return fmt.Errorf("SPF record for %s did not match expected format. Got '%s'", domain, spfRecord)
 }
 
 // Compare intial and flattened SPF records by checking that they both

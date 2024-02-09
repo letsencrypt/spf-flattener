@@ -50,14 +50,22 @@ func NewRootSPF(rootDomain string, lookupIF Lookup) RootSPF {
 var allInRecordRegex = regexp.MustCompile(`^.* (\+|-|~|\?)?all$`)
 var modifierRegex = regexp.MustCompile(`^(\+|-|~|\?)$`)
 
-// Check or lookup SPF record for domain, then parse each mechanism.
+// Lookup or check SPF record for domain, then parse each mechanism.
 // This runs recursively until every mechanism is added either to
 // r.AllMechanism, r.MapIPs, or r.MapNonflat (or ignored)
 func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	slog.Debug("--- Flattening domain ---", "domain", domain)
-	spfRecord, err := CheckSPFRecord(domain, spfRecord, r.LookupIF)
-	if err != nil {
-		return fmt.Errorf("invalid SPF record for %s: %s\n", domain, err)
+	if spfRecord == "" {
+		record, err := GetDomainSPFRecord(domain, r.LookupIF)
+		if err != nil {
+			return fmt.Errorf("could not get SPF record for %s: %s\n", domain, err)
+		}
+		spfRecord = record
+	} else {
+		spfRecord = strings.ReplaceAll(spfRecord, "\n", " ")
+		if err := CheckSPFRecord(domain, spfRecord, r.LookupIF); err != nil {
+			return fmt.Errorf("invalid SPF record for %s: %s\n", domain, err)
+		}
 	}
 	containsAll := allInRecordRegex.MatchString(spfRecord)
 	for _, mechanism := range strings.Split(spfRecord, " ")[1:] {

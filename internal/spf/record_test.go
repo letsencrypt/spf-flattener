@@ -21,19 +21,8 @@ func TestGetDomainSPF(t *testing.T) {
 
 func TestCheckDomainSPF(t *testing.T) {
 	r := NewRootSPF("", mockLookup{})
-	domain, record := "mydomain", "v=spf1 a ~all"
-	// Check that SPF record matches expected whether or not provided in input
-	for _, inputSPF := range []string{"", record} {
-		checkedRecord, err := CheckSPFRecord(domain, inputSPF, r.LookupIF)
-		if checkedRecord != record {
-			t.Fatalf("SPF record lookup did not match expected. Expected `%s` but got `%s`", record, checkedRecord)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
 	// Check that returns error when SPF record does not match expected format
-	_, err := CheckSPFRecord(domain, "spf1 a ~all", r.LookupIF)
+	err := CheckSPFRecord("mydomain", "spf1 a ~all", r.LookupIF)
 	if !regexp.MustCompile("^.*did not match expected format.*$").MatchString(err.Error()) {
 		t.Fatal("SPF record check should have failed")
 	}
