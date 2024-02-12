@@ -127,8 +127,6 @@ func TestParseMechanismMX(t *testing.T) {
 		}
 		err := r.ParseMechanism(testCase[0], testCase[3])
 		if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
-			t.Log(testCase)
-			t.Log(r.MapIPs)
 			t.Fatal(err)
 		}
 	}
@@ -182,8 +180,6 @@ func TestParseMechanismFails(t *testing.T) {
 	for _, wrongMech := range []string{"redirect:domain", "include=anotherdomain", "ip:0.0.0.0", "1.1.1.1", "", "ip6", "exp:explanation", "notMechanism:hello"} {
 		err := r.ParseMechanism(wrongMech, "")
 		if !noMatchRegex.MatchString(err.Error()) {
-			fmt.Println(err.Error())
-			fmt.Println(noMatchRegex)
 			t.Fatalf("Expected `received unexpected SPF mechanism or syntax` error, got `%s` instead", err)
 		}
 	}
@@ -256,7 +252,6 @@ func TestFlattenModifiers(t *testing.T) {
 		if _, ok := r.MapIPs[writeIPMech(ip, "")]; ok {
 			t.Fatal("IP should have been ignored because its include modifier was `-`")
 		}
-		expIPs = append(expIPs, "-"+writeIPMech(ip, ""))
 	}
 	// Test `exists` mechanism skipped because of its fail modifier ~
 	if _, ok := r.MapNonflat["exists:otherdomain"]; ok {

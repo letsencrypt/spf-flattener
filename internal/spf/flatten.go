@@ -125,17 +125,17 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 	case aPrefixRegex.MatchString(mechanism): // a/<prefix-length>
 		return r.ConvertDomainToIP(domain, mechanism[1:])
 	case aDomainPrefixRegex.MatchString(mechanism): // a:<domain>/<prefix-length>
-		return r.ConvertDomainToIP(mechanism[strings.Index(mechanism, ":")+1:lastSlashIndex], mechanism[lastSlashIndex:])
+		return r.ConvertDomainToIP(mechanism[2:lastSlashIndex], mechanism[lastSlashIndex:])
 	case aDomainRegex.MatchString(mechanism): // a:<domain>
-		return r.ConvertDomainToIP(strings.SplitN(mechanism, ":", 2)[1], "")
+		return r.ConvertDomainToIP(mechanism[2:], "")
 	case mechanism == "mx": // mx
 		return r.ConvertMxToIP(domain, "")
 	case mxPrefixRegex.MatchString(mechanism): // mx/<prefix-length>
 		return r.ConvertMxToIP(domain, mechanism[2:])
 	case mxDomainPrefixRegex.MatchString(mechanism): // mx:<domain>/<prefix-length>
-		return r.ConvertMxToIP(mechanism[strings.Index(mechanism, ":")+1:lastSlashIndex], mechanism[lastSlashIndex:])
+		return r.ConvertMxToIP(mechanism[3:lastSlashIndex], mechanism[lastSlashIndex:])
 	case mxDomainRegex.MatchString(mechanism): // mx:<domain>
-		return r.ConvertMxToIP(strings.SplitN(mechanism, ":", 2)[1], "")
+		return r.ConvertMxToIP(mechanism[3:], "")
 	// Add ptr, exists, and exp mechanisms to r.MapNonflat
 	case mechanism == "ptr":
 		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism+":"+domain)

@@ -50,8 +50,7 @@ func TestGetLogLevel(t *testing.T) {
 func TestGetDomainSPF(t *testing.T) {
 	r := NewRootSPF("", mockLookup{})
 	// Check that correctly filters TXT records for SPF record
-	record, _ := GetDomainSPFRecord("mydomain", r.LookupIF)
-	if record != "v=spf1 a ~all" {
+	if record, _ := GetDomainSPFRecord("mydomain", r.LookupIF); record != "v=spf1 a ~all" {
 		t.Fatal("Filtering for SPF record failed.")
 	}
 	// Check that returns error when no SPF record found
