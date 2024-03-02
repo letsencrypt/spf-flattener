@@ -14,7 +14,7 @@ func compareExpectedLogLevel(input string, expLevel slog.Level) error {
 		return fmt.Errorf("unexpected failure parsing log level")
 	}
 	if level != expLevel {
-		return fmt.Errorf("expected to get slog.LevelWarn, instead got %s", level)
+		return fmt.Errorf("expected to get %s, instead got %s", expLevel, level)
 	}
 	return nil
 }
