@@ -61,26 +61,27 @@ func CompareRecords(startSPF, endSPF string) (bool, string, string) {
 	startList, endList := strings.Split(startSPF, " "), strings.Split(endSPF, " ")
 	sort.Strings(startList)
 	sort.Strings(endList)
-	inStart, inEnd := "", ""
+
+	var inStart strings.Builder
+	var inEnd strings.Builder
+
 	i, j := 0, 0
-	for i < len(startList) || j < (len(endList)) {
+	for i < len(startList) || j < len(endList) {
 		switch {
-		case (j == len(endList) && i < len(endList)) || (i < len(startList) && j < len(endList) && startList[i] < endList[j]):
-			inStart += " " + startList[i]
+		case i < len(startList) && (j == len(endList) || startList[i] < endList[j]):
+			inStart.WriteString(startList[i] + " ")
 			i++
-		case (i == len(startList) && j < len(endList)) || (i < len(startList) && j < len(endList) && startList[i] > endList[j]):
-			inEnd += " " + endList[j]
+		case j < len(endList) && (i == len(startList) || startList[i] > endList[j]):
+			inEnd.WriteString(endList[j] + " ")
 			j++
-		default: // startList[i] == endList[j]
+		default:
 			i++
 			j++
 		}
 	}
-	if len(inStart) == 0 && len(inEnd) == 0 {
-		return true, "", ""
-	}
-	return false, strings.TrimSpace(inStart), strings.TrimSpace(inEnd)
-}
+
+	startDiff, endDiff := strings.TrimSpace(inStart.String()), strings.TrimSpace(inEnd.String())
+	return (len(startDiff) == 0 && len(endDiff) == 0), startDiff, endDiff
 
 type PatchRequest struct {
 	Content string `json:"content"`
