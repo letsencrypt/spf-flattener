@@ -82,6 +82,7 @@ func CompareRecords(startSPF, endSPF string) (bool, string, string) {
 
 	startDiff, endDiff := strings.TrimSpace(inStart.String()), strings.TrimSpace(inEnd.String())
 	return (len(startDiff) == 0 && len(endDiff) == 0), startDiff, endDiff
+}
 
 type PatchRequest struct {
 	Content string `json:"content"`

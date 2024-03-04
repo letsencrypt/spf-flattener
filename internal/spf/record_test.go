@@ -70,17 +70,26 @@ func TestCheckDomainSPF(t *testing.T) {
 }
 
 func TestCompareRecords(t *testing.T) {
-	// Check that correctly returns differences between string entries (if any)
-	start := "a b d e"
-	end := "a b c e f g"
-	same, inStart, inEnd := CompareRecords(start, end)
-	if same {
-		t.Fatal("Lists should not match")
+	// Check that correctly returns when same
+	same, _, _ := CompareRecords("a b c", "b c a")
+	if !same {
+		t.Fatal("Lists should match")
 	}
-	expInStart := "d"
-	expInEnd := "c f g"
-	if inStart != expInStart || inEnd != expInEnd {
-		t.Fatalf("Expected: inStart: %s\n\tinEnd: %s\nGot: inStart: %s\n\tinEnd: %s", expInStart, expInEnd, inStart, inEnd)
+	// Check that correctly returns differences between string entries (if any)
+	testInputs := [][]string{ // start, end, expInStart, expInEnd
+		{"a b c", "d e f", "a b c", "d e f"},
+		{"e b d a", "a b c e f g", "d", "c f g"},
+		{"a b c e f g", "e b d a", "c f g", "d"},
+		{"ip4:1.1.1.1 include:mydomain ptr exp=\"some explanation\"", "ip4:1.2.3.4 ip4:1.1.1.1 ptr exp=\"some explanation\"", "include:mydomain", "ip4:1.2.3.4"},
+	}
+	for _, testCase := range testInputs {
+		same, inStart, inEnd := CompareRecords(testCase[0], testCase[1])
+		if same {
+			t.Fatal("Lists should not match")
+		}
+		if inStart != testCase[2] || inEnd != testCase[3] {
+			t.Fatalf("Expected: inStart: %s\n\tinEnd: %s\nGot: inStart: %s\n\tinEnd: %s", testCase[2], testCase[3], inStart, inEnd)
+		}
 	}
 }
 
