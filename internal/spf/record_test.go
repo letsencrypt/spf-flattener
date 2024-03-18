@@ -93,4 +93,3 @@ func TestCompareRecords(t *testing.T) {
 	}
 }
 
-// TODO: test exporting works
