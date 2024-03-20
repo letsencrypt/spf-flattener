@@ -68,7 +68,7 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 		}
 	}
 	containsAll := allInRecordRegex.MatchString(spfRecord)
-	for _, mechanism := range strings.Split(spfRecord, " ")[1:] {
+	for _, mechanism := range strings.Fields(spfRecord)[1:] {
 		// If not `all`, skip mechanism if fail modifier (- or ~) and ignore modifier otherwise
 		if modifierRegex.MatchString(mechanism[:1]) && !allRegex.MatchString(mechanism) {
 			if mechanism[:1] == "-" || mechanism[:1] == "~" {
