@@ -13,7 +13,9 @@ jobs:
     - name: Check abetterinternet.org SPF
       shell: bash
       run: |
-        warning=$(go run cmd/spf-flatten/main.go --domain "abetterinternet.org" --logLevel warn)
+        initialSPF="v=spf1 include:_spf.google.com ip4:23.178.112.0/24 ip4:66.133.109.36 ip4:64.78.149.164 include:spf.mandrillapp.com include:aspmx.pardot.com include:mail.zendesk.com include:_spf.intacct.com include:mg-spf.greenhouse.io -all"
+        warning=$(go run cmd/spf-flatten/main.go --domain "abetterinternet.org" 
+        --initialSPF "${initialSPF}" --logLevel warn)
         if [ -z "${warning}" ]; then
           echo "SPF record for abetterinternet.org has NOT changed"
           exit 0
