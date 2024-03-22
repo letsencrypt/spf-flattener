@@ -1,0 +1,24 @@
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  
+jobs:
+  run_checks:
+    runs-on: ubuntu-latest
+    
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+    
+    - name: Check abetterinternet.org SPF
+      shell: bash
+      run: |
+        warning=$(go run cmd/spf-flatten/main.go --domain "abetterinternet.org" --logLevel warn)
+        if [ -z "${warning}" ]; then
+          echo "SPF record for abetterinternet.org has NOT changed"
+          exit 0
+        else
+          echo ${warning}
+          echo "See __ Confluence page to update SPF record"
+          exit 1
+        fi
