@@ -20,6 +20,6 @@ jobs:
             exit 0
           else
             echo ${warning}
-            echo "See __ Confluence page to update SPF record"
+            echo "See 'Update SPF Record' Confluence page on how to update SPF record"
             exit 1
           fi
