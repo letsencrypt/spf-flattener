@@ -110,7 +110,7 @@ func UpdateSPFRecord(rootDomain, flatSPF, url, authEmail, authKey string) error 
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("X-Auth-Email", authEmail)
-	req.Header.Add("X-Auth-Key", authKey)
+	req.Header.Add("Authorization", "Bearer "+authKey)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
