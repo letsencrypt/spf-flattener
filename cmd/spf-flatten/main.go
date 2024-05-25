@@ -93,7 +93,7 @@ func main() {
 			slog.Info("SPF record is unchanged")
 			return
 		}
-		slog.Warn("Flattened SPF record differs from intiail SPF record", "removed_from_initial", inCurrent, "added_in_flattened", inFlat)
+		slog.Warn("Flattened SPF record differs from initial SPF record", "removed_from_initial", inCurrent, "added_in_flattened", inFlat)
 	}
 	if inputs.dryrun {
 		slog.Info("Dryrun complete")
