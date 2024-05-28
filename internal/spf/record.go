@@ -103,7 +103,9 @@ func MakeHTTPRequest(url, kind, authEmail, authKey string, body io.Reader, targe
 		return fmt.Errorf("HTTP request unsuccessful: got status code %d", res.StatusCode)
 	}
 	if target != nil {
-		json.NewDecoder(res.Body).Decode(target)
+		if err := json.NewDecoder(res.Body).Decode(target); err != nil {
+			return fmt.Errorf("could not json decode response body: %s", err)
+		}
 	}
 	return nil
 }
