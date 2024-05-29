@@ -28,7 +28,7 @@ func parseFlags() (flags, error) {
 	logLevelF := flag.String("logLevel", "LevelInfo", "")                            // optional
 	dryrunF := flag.Bool("dryrun", true, "")                                         // optional
 	warnF := flag.Bool("warn", true, "")                                             // optional TODO: come up with better name
-	urlF := flag.String("url", "", "API URL for SPF record")                         // optional unless dryrun is false
+	urlF := flag.String("url", "", "API URL for SPF record")                         // optional
 	authEmailF := flag.String("authEmail", "", "API key for X-Auth-Email header")    // optional unless dryrun is false
 	authKeyF := flag.String("authKey", "", "API key for X-Auth-Key header")          // optional unless dryrun is false
 	// TBD: should url, authEmail, and authKey be retrieved from os.Getenv instead of passed as flags?
@@ -53,8 +53,8 @@ func parseFlags() (flags, error) {
 	f.logLevel = logLevel
 
 	// Require url, authEmail, and authKey to be nonempty if dryrun is false
-	if !f.dryrun && (f.url == "" || f.authEmail == "" || f.authKey == "") {
-		return flags{}, fmt.Errorf("'url', 'authEmail', and 'authKey' flags cannot be blank if 'dryrun' set to false")
+	if !f.dryrun && (f.authEmail == "" || f.authKey == "") {
+		return flags{}, fmt.Errorf("'authEmail' and 'authKey' flags cannot be blank if 'dryrun' set to false")
 	}
 
 	return f, nil

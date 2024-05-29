@@ -4,6 +4,7 @@ package spf
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -84,6 +85,96 @@ func CompareRecords(startSPF, endSPF string) (bool, string, string) {
 	return (len(startDiff) == 0 && len(endDiff) == 0), startDiff, endDiff
 }
 
+// Make HTTP request of type kind to url with body and
+// authEmail and authKey authorization headers. If target not nil,
+// then json decode response body and store in target. Return error
+func MakeHTTPRequest(url, kind, authEmail, authKey string, body io.Reader, target interface{}) error {
+	req, _ := http.NewRequest(kind, url, body)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-Auth-Email", authEmail)
+	req.Header.Add("Authorization", "Bearer "+authKey)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("could not make HTTP request: %s", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return fmt.Errorf("HTTP request unsuccessful: got status code %d", res.StatusCode)
+	}
+	if target != nil {
+		if err := json.NewDecoder(res.Body).Decode(target); err != nil {
+			return fmt.Errorf("could not json decode response body: %s", err)
+		}
+	}
+	return nil
+}
+
+type ZonesResponse struct {
+	Result []struct {
+		Id string `json:"id"`
+	}
+}
+
+// Get the zone ID of rootDomain's zone
+func GetZoneID(rootDomain, authEmail, authKey string) (string, error) {
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones?name=%s", rootDomain)
+	results := new(ZonesResponse)
+	err := MakeHTTPRequest(url, "GET", authEmail, authKey, nil, results)
+	if err != nil {
+		return "", fmt.Errorf("error looking up DNS zone for %s: %s", rootDomain, err)
+	}
+	if len(results.Result) > 1 {
+		return "", fmt.Errorf("found more than one DNS zone for %s", rootDomain)
+	}
+	return results.Result[0].Id, nil
+}
+
+type RecordsResponse struct {
+	Result []struct {
+		Id      string `json:"id"`
+		Content string `json:"content"`
+	}
+}
+
+// Get the record ID of rootDomain's SPF record
+func GetRecordID(rootDomain, authEmail, authKey, zone_id string) (string, error) {
+	// Get all TXT records in rootDomain's zone with the rootDomain as the name
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records?type=TXT&name=%s", zone_id, rootDomain)
+	results := new(RecordsResponse)
+
+	err := MakeHTTPRequest(url, "GET", authEmail, authKey, nil, results)
+	if err != nil {
+		return "", fmt.Errorf("error looking up TXT records for %s: %s", rootDomain, err)
+	}
+
+	// Filter for SPF record and record it's record_id
+	record_id := ""
+	for _, record := range results.Result {
+		if strings.HasPrefix(record.Content, "v=spf1") {
+			if record_id != "" {
+				return "", fmt.Errorf("found more than one SPF record for %s", rootDomain)
+			}
+			record_id = record.Id
+		}
+	}
+	return record_id, nil
+}
+
+// Lookup up the zone_id and record_id of rootDomain's SPF record and then
+// write and return the url based on those values
+func GetRecordURL(rootDomain, authEmail, authKey string) (string, error) {
+	zone_id, err := GetZoneID(rootDomain, authEmail, authKey)
+	if err != nil {
+		return "", fmt.Errorf("could not get zone_id of %s: %s", rootDomain, err)
+	}
+	record_id, err := GetRecordID(rootDomain, authEmail, authKey, zone_id)
+	if err != nil {
+		return "", fmt.Errorf("could not get record_id of %s's SPF record: %s", rootDomain, err)
+	}
+	return fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records/%s", zone_id, record_id), nil
+}
+
 type PatchRequest struct {
 	Content string `json:"content"`
 	Name    string `json:"name"`
@@ -104,22 +195,19 @@ func UpdateSPFRecord(rootDomain, flatSPF, url, authEmail, authKey string) error 
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(payload)))
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("X-Auth-Email", authEmail)
-	req.Header.Add("Authorization", "Bearer "+authKey)
 
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
+	// If url not provided, get API URL for rootDomain's SPF record
+	if url == "" {
+		record_url, err := GetRecordURL(rootDomain, authEmail, authKey)
+		if err != nil {
+			return err
+		}
+		url += record_url
 	}
 
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return fmt.Errorf("failed to update SPF record. Got response: `%d` -- `%s`", res.StatusCode, res.Body)
+	err = MakeHTTPRequest(url, "PATCH", authEmail, authKey, strings.NewReader(string(payload)), nil)
+	if err != nil {
+		return err
 	}
 	return nil
 }
