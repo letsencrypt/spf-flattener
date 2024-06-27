@@ -61,7 +61,7 @@ func (r *RootSPF) compareExpected(err error, expAll string, expIPs, expNF []stri
 }
 
 func TestParseMechanismAll(t *testing.T) {
-	r := NewRootSPF("myrootdomain", mockLookup{})
+	r := NewRootSPF("myrootdomain", mockLookup{}, "")
 	// Test `all`` mechanism set if domain is root
 	err := r.ParseMechanism("~all", "myrootdomain")
 	if err = r.compareExpected(err, " ~all", []string{}, []string{}); err != nil {
@@ -75,7 +75,7 @@ func TestParseMechanismAll(t *testing.T) {
 }
 
 func TestParseMechanismIP(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test ip mechanisms of the form `ip4:<ipaddr>`, `ip4:<ipaddr>/<prefix-length>, `ip6:<ipaddr>`, and `ip6:<ipaddr>/<prefix-length>`
 	ipMechs := []string{"ip4:abcd", "ip4:8.8.8.8", "ip6:efgh/36", "ip6:2001:0db8:85a3:0000:0000:8a2e:0370:7334", "ip6:11:22::33/128"}
 	for _, mech := range ipMechs {
@@ -87,7 +87,7 @@ func TestParseMechanismIP(t *testing.T) {
 }
 
 func TestParseMechanismA(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test `a` mechanism of the form `a`, `a:<domain>`, `a/<prefix-length>`, and `a:<domain>/<prefix-length`
 	testInputs := [][]string{ //mechanism, prefix, aDomain, currentDomain
 		{"a", "", "mydomain", "mydomain"},
@@ -109,7 +109,7 @@ func TestParseMechanismA(t *testing.T) {
 }
 
 func TestParseMechanismMX(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test `mx` mechanism of the form `mx`, `mx:<domain>`, `mx/<prefix-length>`, and `mx:<domain>/<prefix-length`
 	testInputs := [][]string{ // mechanism, prefix, mxDomain, currentDomain
 		{"mx", "", "anotherdomain", "anotherdomain"},
@@ -133,7 +133,7 @@ func TestParseMechanismMX(t *testing.T) {
 }
 
 func TestParseMechanismNonFlat(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test ptr mechanism of the form `ptr`
 	err := r.ParseMechanism("ptr", "domain")
 	if err = r.compareExpected(err, "", []string{}, []string{"ptr:domain"}); err != nil {
@@ -150,7 +150,7 @@ func TestParseMechanismNonFlat(t *testing.T) {
 }
 
 func TestParseMechanismInclude(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test mechanism of the form `include:<domain>`
 	includeDomain := "mydomain" // SPF record is just `a`, so expect IPs for "mydomain"
 	expIPs := []string{}
@@ -164,7 +164,7 @@ func TestParseMechanismInclude(t *testing.T) {
 }
 
 func TestParseMechanismRedirect(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test mechanism of the form `redirect=<domain>`
 	redirectDomain := "test.com" // SPF record is just ip4:10.10.10.10
 	err := r.ParseMechanism("redirect="+redirectDomain, "notmydomain")
@@ -174,7 +174,7 @@ func TestParseMechanismRedirect(t *testing.T) {
 }
 
 func TestParseMechanismFails(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test that parseMechanism fails on unexpected mechanism or syntax error
 	noMatchRegex := regexp.MustCompile(`^received unexpected SPF mechanism or syntax.*$`)
 	for _, wrongMech := range []string{"redirect:domain", "include=anotherdomain", "ip:0.0.0.0", "1.1.1.1", "", "ip6", "exp:explanation", "notMechanism:hello"} {
@@ -186,7 +186,7 @@ func TestParseMechanismFails(t *testing.T) {
 }
 
 func TestFlattenSPF(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Test that SPF record with multiple different entries gets flattened as expected
 	domain, spf := "abcd.net", "v=spf1 ip4:0.0.0.0/24 include:example.com ip6:56:0::0:7 a mx:test.domain exists:somedomain.edu -all"
 	// include:example.com --> (mydomain spf --> a --> mydomain IPs) + exp=exp.example.com
@@ -206,8 +206,36 @@ func TestFlattenSPF(t *testing.T) {
 	}
 }
 
+func TestNoFlattenKeeps(t *testing.T) {
+	// Test that non-keep mechanisms get flattened
+	r := NewRootSPF("", mockLookup{}, "include:example.com")
+	domain, spf := "abcd.net", "v=spf1 ip4:8.8.8.8/24 include:example.com ip6:56:0::0:7 a mx:test.domain exists:somedomain.edu -all"
+	r.RootDomain = domain
+	expIPs := []string{"ip4:8.8.8.8/24", "ip6:56:0::0:7"}
+	expNFs := []string{"exists:somedomain.edu", "include:example.com"}
+	for _, d := range []string{"abcd.net", "info.info"} {
+		for _, ip := range ipLookup[d] {
+			fmt.Printf("adding ip %s to expected\n", ip)
+			expIPs = append(expIPs, writeIPMech(ip, ""))
+		}
+	}
+	err := r.FlattenSPF(domain, spf)
+	if err = r.compareExpected(err, " -all", expIPs, expNFs); err != nil {
+		t.Fatal(err)
+	}
+	// Test that keep mechanism "include:example.com" not flattened
+	for _, ip := range ipLookup["mydomain"] {
+		if _, ok := r.MapIPs[writeIPMech(ip, "")]; ok {
+			t.Fatal("keep mechanism 'include:example.com' should not have been flattened")
+		}
+	}
+	if _, ok := r.MapNonflat["exp=exp.example.com"]; ok {
+		t.Fatal("keep mechanism 'include:example.com' should not have been flattened")
+	}
+}
+
 func TestFlattenRedirects(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	domain, spf := "somedomain", "v=spf1 ip4:9.9.9.9 redirect=mydomain ip6:2:2:2:2::::"
 	// Test that mechanisms after redirects are ignored
 	expIPs := []string{"ip4:9.9.9.9"}
@@ -234,7 +262,7 @@ func TestFlattenRedirects(t *testing.T) {
 
 func TestFlattenModifiers(t *testing.T) {
 	// Test modifier logic
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	domain, spf := "somedomain", "v=spf1 -include:mydomain +ip4:9.8.7.6/54 ~exists:otherdomain ?mx:test.domain -all"
 	r.RootDomain = domain
 	expIPs := []string{"ip4:9.8.7.6/54"}
