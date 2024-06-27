@@ -215,7 +215,6 @@ func TestNoFlattenKeeps(t *testing.T) {
 	expNFs := []string{"exists:somedomain.edu", "include:example.com"}
 	for _, d := range []string{"abcd.net", "info.info"} {
 		for _, ip := range ipLookup[d] {
-			fmt.Printf("adding ip %s to expected\n", ip)
 			expIPs = append(expIPs, writeIPMech(ip, ""))
 		}
 	}
