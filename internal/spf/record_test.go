@@ -92,3 +92,14 @@ func TestCompareRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestSPFTooLongError(t *testing.T) {
+	spfRecord := "v=spf1 " + strings.Repeat("a", 2042)
+	if err := UpdateSPFRecord("mydomain", spfRecord, "", "", ""); !strings.HasPrefix(err.Error(), "SPF record is too long") {
+		t.Fatalf("expected to fail since SPF record is too long")
+	}
+	spfRecord = "v=spf1 " + strings.Repeat("a", 2041)
+	if err := UpdateSPFRecord("mydomain", spfRecord, "", "", ""); strings.HasPrefix(err.Error(), "SPF record is too long") {
+		t.Fatalf("unexpected `SPF record is too long` error")
+	}
+}
