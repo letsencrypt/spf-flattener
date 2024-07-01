@@ -16,6 +16,7 @@ type flags struct {
 	logLevel   slog.Level
 	dryrun     bool
 	warn       bool
+	keep       string
 	url        string
 	authEmail  string
 	authKey    string
@@ -28,6 +29,7 @@ func parseFlags() (flags, error) {
 	logLevelF := flag.String("logLevel", "LevelInfo", "")                            // optional
 	dryrunF := flag.Bool("dryrun", true, "")                                         // optional
 	warnF := flag.Bool("warn", true, "")                                             // optional TODO: come up with better name
+	keepF := flag.String("keep", "", "list SPF mechanisms to leave unflattened")     // optional
 	urlF := flag.String("url", "", "API URL for SPF record")                         // optional
 	authEmailF := flag.String("authEmail", "", "API key for X-Auth-Email header")    // optional unless dryrun is false
 	authKeyF := flag.String("authKey", "", "API key for X-Auth-Key header")          // optional unless dryrun is false
@@ -35,7 +37,7 @@ func parseFlags() (flags, error) {
 	// TBD: possible flags to add in the future: list of mechanisms to ignore or fail on, timeout/max recursions
 	flag.Parse()
 	f := flags{rootDomain: *rootDomainF, initialSPF: *ogRecordF, dryrun: *dryrunF, warn: *warnF,
-		url: *urlF, authEmail: *authEmailF, authKey: *authKeyF}
+		keep: *keepF, url: *urlF, authEmail: *authEmailF, authKey: *authKeyF}
 
 	// Require domain to be nonempty
 	if f.rootDomain == "" {
@@ -71,7 +73,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	/// Flatten SPF record for input domain
-	r := spf.NewRootSPF(inputs.rootDomain, spf.NetLookup{})
+	r := spf.NewRootSPF(inputs.rootDomain, spf.NetLookup{}, inputs.keep)
 	if err = r.FlattenSPF(r.RootDomain, inputs.initialSPF); err != nil {
 		slog.Error("Could not flatten SPF record for initial domain", "error", err)
 		os.Exit(1)

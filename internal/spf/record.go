@@ -184,6 +184,9 @@ type PatchRequest struct {
 
 // PATCH the updated, flattened SPF record
 func UpdateSPFRecord(rootDomain, flatSPF, url, authEmail, authKey string) error {
+	if len(flatSPF) > 2048 {
+		return fmt.Errorf("SPF record is too long (got %d > 2048 characters)", len(flatSPF))
+	}
 	// {\n  \"content\": \"<SPF_RECORD>\",\n  \"name\": \"<DOMAIN>\",\n  \"type\": \"TXT\",\n  \"comment\": \"Dynamically updated, flattened SPF record\"}
 	patchReq := PatchRequest{
 		Content: flatSPF,
