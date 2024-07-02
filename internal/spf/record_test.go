@@ -48,7 +48,7 @@ func TestGetLogLevel(t *testing.T) {
 }
 
 func TestGetDomainSPF(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Check that correctly filters TXT records for SPF record
 	if record, _ := GetDomainSPFRecord("mydomain", r.LookupIF); record != "v=spf1 a ~all" {
 		t.Fatal("Filtering for SPF record failed.")
@@ -61,7 +61,7 @@ func TestGetDomainSPF(t *testing.T) {
 }
 
 func TestCheckDomainSPF(t *testing.T) {
-	r := NewRootSPF("", mockLookup{})
+	r := NewRootSPF("", mockLookup{}, "")
 	// Check that returns error when SPF record does not match expected format
 	err := CheckSPFRecord("mydomain", "spf1 a ~all", r.LookupIF)
 	if !regexp.MustCompile("^.*did not match expected format.*$").MatchString(err.Error()) {
@@ -93,3 +93,13 @@ func TestCompareRecords(t *testing.T) {
 	}
 }
 
+func TestSPFTooLongError(t *testing.T) {
+	spfRecord := "v=spf1 " + strings.Repeat("a", 2042)
+	if err := UpdateSPFRecord("mydomain", spfRecord, "", "", ""); !strings.HasPrefix(err.Error(), "SPF record is too long") {
+		t.Fatalf("expected to fail since SPF record is too long")
+	}
+	spfRecord = "v=spf1 " + strings.Repeat("a", 2041)
+	if err := UpdateSPFRecord("mydomain", spfRecord, "", "", ""); strings.HasPrefix(err.Error(), "SPF record is too long") {
+		t.Fatalf("unexpected `SPF record is too long` error")
+	}
+}

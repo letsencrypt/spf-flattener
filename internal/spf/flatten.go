@@ -38,13 +38,19 @@ func writeIPMech(ip net.IP, prefix string) string {
 type RootSPF struct {
 	RootDomain   string
 	AllMechanism string
+	MapKeep      map[string]bool
 	MapIPs       map[string]bool
 	MapNonflat   map[string]bool
 	LookupIF     Lookup
 }
 
-func NewRootSPF(rootDomain string, lookupIF Lookup) RootSPF {
-	return RootSPF{RootDomain: rootDomain, LookupIF: lookupIF, MapIPs: map[string]bool{}, MapNonflat: map[string]bool{}}
+func NewRootSPF(rootDomain string, lookupIF Lookup, keep string) RootSPF {
+	mapKeep := make(map[string]bool)
+	for _, mechanism := range strings.Fields(keep) {
+		mapKeep[mechanism] = true
+	}
+	return RootSPF{RootDomain: rootDomain, LookupIF: lookupIF, MapKeep: mapKeep,
+		MapIPs: map[string]bool{}, MapNonflat: map[string]bool{}}
 }
 
 var allInRecordRegex = regexp.MustCompile(`^.* (\+|-|~|\?)?all$`)
@@ -69,6 +75,11 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	}
 	containsAll := allInRecordRegex.MatchString(spfRecord)
 	for _, mechanism := range strings.Fields(spfRecord)[1:] {
+		// If mechanism is in string of "keep" mechanisms, add to MapNonflat and don't parse
+		if _, ok := r.MapKeep[mechanism]; ok {
+			r.MapNonflat[mechanism] = true
+			continue
+		}
 		// If not `all`, skip mechanism if fail modifier (- or ~) and ignore modifier otherwise
 		if modifierRegex.MatchString(mechanism[:1]) && !allRegex.MatchString(mechanism) {
 			if mechanism[:1] == "-" || mechanism[:1] == "~" {
