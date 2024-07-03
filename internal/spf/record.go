@@ -56,6 +56,26 @@ func CheckSPFRecord(domain, spfRecord string, lookupIF Lookup) error {
 	return fmt.Errorf("SPF record for %s did not match expected format. Got '%s'", domain, spfRecord)
 }
 
+// For each mechanism in "mechanisms", lookup trace of changes/flattening
+// and store in map with traces as keys and group of mechanisms with shared trace
+// as values, then return map. E.g. map["include:example.com => a"] = "ip4:0.0.0.0 ip4:1.2.3.4"
+func TraceChanges(mechanisms string, traceTree Tree) map[string]string {
+	mapTraces := map[string]string{}
+	for _, mech := range strings.Fields(mechanisms) {
+		node := traceTree.FindNode(mech)
+		if node == nil {
+			fmt.Printf("couldn't find node %s\n", mech)
+		}
+		trace := strings.Join(traceTree.GetAncestors(node), " => ")
+		if _, ok := mapTraces[trace]; ok {
+			mapTraces[trace] += " " + mech
+		} else {
+			mapTraces[trace] = mech
+		}
+	}
+	return mapTraces
+}
+
 // Compare intial and flattened SPF records by checking that they both
 // have the same entries regardless of order. Return any different entries.
 func CompareRecords(startSPF, endSPF string) (bool, string, string) {

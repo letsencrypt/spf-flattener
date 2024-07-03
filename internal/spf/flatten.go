@@ -38,19 +38,18 @@ func writeIPMech(ip net.IP, prefix string) string {
 type RootSPF struct {
 	RootDomain   string
 	AllMechanism string
-	MapKeep      map[string]bool
+	Keeps        string
 	MapIPs       map[string]bool
 	MapNonflat   map[string]bool
 	LookupIF     Lookup
+	LookupCount  int
+	TraceTree    Tree
 }
 
 func NewRootSPF(rootDomain string, lookupIF Lookup, keep string) RootSPF {
-	mapKeep := make(map[string]bool)
-	for _, mechanism := range strings.Fields(keep) {
-		mapKeep[mechanism] = true
-	}
-	return RootSPF{RootDomain: rootDomain, LookupIF: lookupIF, MapKeep: mapKeep,
-		MapIPs: map[string]bool{}, MapNonflat: map[string]bool{}}
+	return RootSPF{RootDomain: rootDomain, Keeps: keep, MapIPs: map[string]bool{}, MapNonflat: map[string]bool{},
+		LookupIF: lookupIF, LookupCount: 0, TraceTree: Tree{root: &node{name: rootDomain}}}
+
 }
 
 var allInRecordRegex = regexp.MustCompile(`^.* (\+|-|~|\?)?all$`)
@@ -59,7 +58,7 @@ var modifierRegex = regexp.MustCompile(`^(\+|-|~|\?)$`)
 // Lookup or check SPF record for domain, then parse each mechanism.
 // This runs recursively until every mechanism is added either to
 // r.AllMechanism, r.MapIPs, or r.MapNonflat (or ignored)
-func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
+func (r *RootSPF) FlattenSPF(domain, spfRecord string, parent Node) error {
 	slog.Debug("--- Flattening domain ---", "domain", domain)
 	if spfRecord == "" {
 		record, err := GetDomainSPFRecord(domain, r.LookupIF)
@@ -75,11 +74,6 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 	}
 	containsAll := allInRecordRegex.MatchString(spfRecord)
 	for _, mechanism := range strings.Fields(spfRecord)[1:] {
-		// If mechanism is in string of "keep" mechanisms, add to MapNonflat and don't parse
-		if _, ok := r.MapKeep[mechanism]; ok {
-			r.MapNonflat[mechanism] = true
-			continue
-		}
 		// If not `all`, skip mechanism if fail modifier (- or ~) and ignore modifier otherwise
 		if modifierRegex.MatchString(mechanism[:1]) && !allRegex.MatchString(mechanism) {
 			if mechanism[:1] == "-" || mechanism[:1] == "~" {
@@ -93,7 +87,7 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 			continue
 		}
 		// Parse mechanism
-		err := r.ParseMechanism(strings.TrimSpace(mechanism), domain)
+		err := r.ParseMechanism(strings.TrimSpace(mechanism), domain, parent)
 		if err != nil {
 			return fmt.Errorf("could not flatten SPF record for %s: %s\n", domain, err)
 		}
@@ -117,8 +111,10 @@ var nonflatRegex = regexp.MustCompile(`^(ptr:|exists:|exp=).*$`)
 var includeOrRedirectRegex = regexp.MustCompile(`^(include:|redirect=).*$`)
 
 // Parse the given mechanism and dispatch it accordingly
-func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
+func (r *RootSPF) ParseMechanism(mechanism, domain string, parent Node) error {
 	lastSlashIndex := strings.LastIndex(mechanism, "/")
+	childNode := &node{name: mechanism, parent: parent}
+	parent.AddChild(childNode)
 	switch {
 	// Copy `all` mechanism if set by ROOT_DOMAIN
 	case allRegex.MatchString(mechanism):
@@ -132,21 +128,21 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 		r.MapIPs[mechanism] = true
 	// Convert A/AAAA and MX records, then add to r.MapIPs
 	case mechanism == "a": // a
-		return r.ConvertDomainToIP(domain, "")
+		return r.ConvertDomainToIP(domain, "", childNode)
 	case aPrefixRegex.MatchString(mechanism): // a/<prefix-length>
-		return r.ConvertDomainToIP(domain, mechanism[1:])
+		return r.ConvertDomainToIP(domain, mechanism[1:], childNode)
 	case aDomainPrefixRegex.MatchString(mechanism): // a:<domain>/<prefix-length>
-		return r.ConvertDomainToIP(mechanism[2:lastSlashIndex], mechanism[lastSlashIndex:])
+		return r.ConvertDomainToIP(mechanism[2:lastSlashIndex], mechanism[lastSlashIndex:], childNode)
 	case aDomainRegex.MatchString(mechanism): // a:<domain>
-		return r.ConvertDomainToIP(mechanism[2:], "")
+		return r.ConvertDomainToIP(mechanism[2:], "", childNode)
 	case mechanism == "mx": // mx
-		return r.ConvertMxToIP(domain, "")
+		return r.ConvertMxToIP(domain, "", childNode)
 	case mxPrefixRegex.MatchString(mechanism): // mx/<prefix-length>
-		return r.ConvertMxToIP(domain, mechanism[2:])
+		return r.ConvertMxToIP(domain, mechanism[2:], childNode)
 	case mxDomainPrefixRegex.MatchString(mechanism): // mx:<domain>/<prefix-length>
-		return r.ConvertMxToIP(mechanism[3:lastSlashIndex], mechanism[lastSlashIndex:])
+		return r.ConvertMxToIP(mechanism[3:lastSlashIndex], mechanism[lastSlashIndex:], childNode)
 	case mxDomainRegex.MatchString(mechanism): // mx:<domain>
-		return r.ConvertMxToIP(mechanism[3:], "")
+		return r.ConvertMxToIP(mechanism[3:], "", childNode)
 	// Add ptr, exists, and exp mechanisms to r.MapNonflat
 	case mechanism == "ptr":
 		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism+":"+domain)
@@ -156,7 +152,7 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 		r.MapNonflat[mechanism] = true
 	// Recursive call to FlattenSPF on `include` and `redirect` mechanism
 	case includeOrRedirectRegex.MatchString(mechanism):
-		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "")
+		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "", childNode)
 	// Return error if no match
 	default:
 		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
@@ -165,13 +161,15 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 }
 
 // Convert A/AAAA records to IPs and add them to r.MapIPs
-func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
+func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string, parent Node) error {
 	slog.Debug("Looking up IP records for domain", "domain", domain)
 	ips, err := r.LookupIF.LookupIP(domain)
 	if err != nil {
 		return fmt.Errorf("could not lookup IPs for %s: %s\n", domain, err)
 	}
 	for _, ip := range ips {
+		childNode := &node{name: writeIPMech(ip, prefixLength), parent: parent}
+		parent.AddChild(childNode)
 		slog.Debug("Adding IP mechanism", "mechanism", writeIPMech(ip, prefixLength))
 		r.MapIPs[writeIPMech(ip, prefixLength)] = true
 	}
@@ -179,23 +177,45 @@ func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
 }
 
 // Convert MX records to domains then to IPs and add them to r.MapIPs
-func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
+func (r *RootSPF) ConvertMxToIP(domain, prefixLength string, parent Node) error {
 	slog.Debug("Looking up MX records for domain", "domain", domain)
 	mxs, err := r.LookupIF.LookupMX(domain)
 	if err != nil {
 		return fmt.Errorf("could not lookup MX records for %s: %s\n", domain, err)
 	}
 	for _, mx := range mxs {
+		childNode := &node{name: mx.Host, parent: parent}
+		parent.AddChild(childNode)
 		slog.Debug("Found MX record for domain", "mx_record", mx.Host)
-		if err := r.ConvertDomainToIP(mx.Host, prefixLength); err != nil {
+		if err := r.ConvertDomainToIP(mx.Host, prefixLength, childNode); err != nil {
 			return fmt.Errorf("could not lookup IPs for MX record `%s`: %s\n", mx.Host, err)
 		}
 	}
 	return nil
 }
 
+// Remove all mechanisms flattened by "keeps", add "keeps" to r.MapNonflat
+// and count DNS lookups required by final SPF record
+func (r *RootSPF) UnflattenKeeps() {
+	r.LookupCount += len(r.MapNonflat)
+	for _, keep := range strings.Fields(r.Keeps) {
+		if keepNode := r.TraceTree.FindNode(keep); keepNode != nil {
+			keepSubtree := r.TraceTree.GetSubtree(keepNode, []string{})
+			for _, node := range keepSubtree {
+				if !strings.HasPrefix(node, "ip") && !strings.HasSuffix(node, "all") {
+					r.LookupCount += 1
+				}
+				delete(r.MapIPs, node)
+				delete(r.MapNonflat, node)
+			}
+			r.MapNonflat[keep] = true
+		}
+	}
+}
+
 // Flatten and write new SPF record for root domain by compiling r.AllMechanism, r.MapIPs, and r.MapNonflat
 func (r *RootSPF) WriteFlatSPF() string {
+	r.UnflattenKeeps()
 	flatSPF := "v=spf1"
 	for ip := range r.MapIPs {
 		flatSPF += " " + ip
