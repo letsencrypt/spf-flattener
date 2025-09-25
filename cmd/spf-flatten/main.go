@@ -74,14 +74,14 @@ func main() {
 
 	/// Flatten SPF record for input domain
 	r := spf.NewRootSPF(inputs.rootDomain, spf.NetLookup{}, inputs.keep)
-	if err = r.FlattenSPF(r.RootDomain, inputs.initialSPF); err != nil {
+	if err = r.FlattenSPF(r.RootDomain, inputs.initialSPF, r.TraceTree.Root()); err != nil {
 		slog.Error("Could not flatten SPF record for initial domain", "error", err)
 		os.Exit(1)
 	}
 	flatSPF := r.WriteFlatSPF()
 
 	// Output flattened SPF record
-	slog.Info("Successfully flattened SPF record for initial domain", "flattened_record", flatSPF)
+	slog.Info("Successfully flattened SPF record for initial domain", "flattened_record", flatSPF, "num_dns_lookups", r.LookupCount)
 
 	if inputs.warn {
 		// Compare flattened SPF to SPF record currently set for r.RootDomain
@@ -96,7 +96,15 @@ func main() {
 			return
 		}
 		slog.Warn("Flattened SPF record differs from initial SPF record", "removed_from_initial", inCurrent, "added_in_flattened", inFlat)
+		traceMap := spf.TraceChanges(inCurrent+" "+inFlat, r.TraceTree)
+		for k, v := range traceMap {
+			slog.Warn("Trace source of changes", "change_source", k, "changes", v)
+		}
 	}
+	if r.LookupCount > 10 {
+		slog.Error("Final SPF record requires more than 10 DNS lookups")
+	}
+
 	if inputs.dryrun {
 		slog.Info("Dryrun complete")
 		return
