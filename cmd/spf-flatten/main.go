@@ -74,7 +74,7 @@ func main() {
 
 	/// Flatten SPF record for input domain
 	r := spf.NewRootSPF(inputs.rootDomain, spf.NetLookup{}, inputs.keep)
-	if err = r.FlattenSPF(r.RootDomain, inputs.initialSPF); err != nil {
+	if err = r.FlattenSPF(r.RootDomain, inputs.initialSPF, true); err != nil {
 		slog.Error("Could not flatten SPF record for initial domain", "error", err)
 		os.Exit(1)
 	}

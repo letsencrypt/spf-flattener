@@ -62,13 +62,13 @@ func (r *RootSPF) compareExpected(err error, expAll string, expIPs, expNF []stri
 
 func TestParseMechanismAll(t *testing.T) {
 	r := NewRootSPF("myrootdomain", mockLookup{}, "")
-	// Test `all`` mechanism set if domain is root
-	err := r.ParseMechanism("~all", "myrootdomain")
+	// Test `all`` mechanism set if requested
+	err := r.ParseMechanism("~all", "myrootdomain", true)
 	if err = r.compareExpected(err, " ~all", []string{}, []string{}); err != nil {
 		t.Fatal(err)
 	}
-	// Test `all`` mechanism is ignored if domain is NOT root
-	err = r.ParseMechanism("-all", "NOTmyrootdomain")
+	// Test `all`` mechanism is ignored if not requested
+	err = r.ParseMechanism("~all", "myrootdomain", false)
 	if err = r.compareExpected(err, " ~all", []string{}, []string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestParseMechanismIP(t *testing.T) {
 	// Test ip mechanisms of the form `ip4:<ipaddr>`, `ip4:<ipaddr>/<prefix-length>, `ip6:<ipaddr>`, and `ip6:<ipaddr>/<prefix-length>`
 	ipMechs := []string{"ip4:abcd", "ip4:8.8.8.8", "ip6:efgh/36", "ip6:2001:0db8:85a3:0000:0000:8a2e:0370:7334", "ip6:11:22::33/128"}
 	for _, mech := range ipMechs {
-		err := r.ParseMechanism(mech, "")
+		err := r.ParseMechanism(mech, "", true)
 		if err = r.compareExpected(err, "", []string{mech}, []string{}); err != nil {
 			t.Fatal(err)
 		}
@@ -101,7 +101,7 @@ func TestParseMechanismA(t *testing.T) {
 		for _, ip := range ipLookup[testCase[2]] {
 			expIPs = append(expIPs, writeIPMech(ip, testCase[1]))
 		}
-		err := r.ParseMechanism(testCase[0], testCase[3])
+		err := r.ParseMechanism(testCase[0], testCase[3], true)
 		if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestParseMechanismMX(t *testing.T) {
 				expIPs = append(expIPs, writeIPMech(ip, testCase[1]))
 			}
 		}
-		err := r.ParseMechanism(testCase[0], testCase[3])
+		err := r.ParseMechanism(testCase[0], testCase[3], true)
 		if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
 			t.Fatal(err)
 		}
@@ -135,14 +135,14 @@ func TestParseMechanismMX(t *testing.T) {
 func TestParseMechanismNonFlat(t *testing.T) {
 	r := NewRootSPF("", mockLookup{}, "")
 	// Test ptr mechanism of the form `ptr`
-	err := r.ParseMechanism("ptr", "domain")
+	err := r.ParseMechanism("ptr", "domain", true)
 	if err = r.compareExpected(err, "", []string{}, []string{"ptr:domain"}); err != nil {
 		t.Fatal(err)
 	}
 	// Test nonflat mechanisms of the form `ptr:<domain>`, `<exists:<domain>`, and `exp=<domain>`
 	nfMechs := []string{"ptr:example.com", "exists:yourdomain", "exp=explain.example.com"}
 	for _, nfMech := range nfMechs {
-		err := r.ParseMechanism(nfMech, "")
+		err := r.ParseMechanism(nfMech, "", true)
 		if err = r.compareExpected(err, "", []string{}, []string{nfMech}); err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +157,7 @@ func TestParseMechanismInclude(t *testing.T) {
 	for _, ip := range ipLookup[includeDomain] {
 		expIPs = append(expIPs, writeIPMech(ip, ""))
 	}
-	err := r.ParseMechanism("include:"+includeDomain, "notmydomain")
+	err := r.ParseMechanism("include:"+includeDomain, "notmydomain", true)
 	if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestParseMechanismRedirect(t *testing.T) {
 	r := NewRootSPF("", mockLookup{}, "")
 	// Test mechanism of the form `redirect=<domain>`
 	redirectDomain := "test.com" // SPF record is just ip4:10.10.10.10
-	err := r.ParseMechanism("redirect="+redirectDomain, "notmydomain")
+	err := r.ParseMechanism("redirect="+redirectDomain, "notmydomain", true)
 	if err = r.compareExpected(err, "", []string{"ip4:10.10.10.10"}, []string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestParseMechanismFails(t *testing.T) {
 	// Test that parseMechanism fails on unexpected mechanism or syntax error
 	noMatchRegex := regexp.MustCompile(`^received unexpected SPF mechanism or syntax.*$`)
 	for _, wrongMech := range []string{"redirect:domain", "include=anotherdomain", "ip:0.0.0.0", "1.1.1.1", "", "ip6", "exp:explanation", "notMechanism:hello"} {
-		err := r.ParseMechanism(wrongMech, "")
+		err := r.ParseMechanism(wrongMech, "", true)
 		if !noMatchRegex.MatchString(err.Error()) {
 			t.Fatalf("Expected `received unexpected SPF mechanism or syntax` error, got `%s` instead", err)
 		}
@@ -200,7 +200,7 @@ func TestFlattenSPF(t *testing.T) {
 			expIPs = append(expIPs, writeIPMech(ip, ""))
 		}
 	}
-	err := r.FlattenSPF(domain, spf)
+	err := r.FlattenSPF(domain, spf, true)
 	if err = r.compareExpected(err, " -all", expIPs, expNFs); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestNoFlattenKeeps(t *testing.T) {
 			expIPs = append(expIPs, writeIPMech(ip, ""))
 		}
 	}
-	err := r.FlattenSPF(domain, spf)
+	err := r.FlattenSPF(domain, spf, true)
 	if err = r.compareExpected(err, " -all", expIPs, expNFs); err != nil {
 		t.Fatal(err)
 	}
@@ -241,8 +241,8 @@ func TestFlattenRedirects(t *testing.T) {
 	for _, ip := range ipLookup["mydomain"] {
 		expIPs = append(expIPs, writeIPMech(ip, ""))
 	}
-	err := r.FlattenSPF(domain, spf)
-	if err = r.compareExpected(err, "", expIPs, []string{}); err != nil {
+	err := r.FlattenSPF(domain, spf, true)
+	if err = r.compareExpected(err, " ~all", expIPs, []string{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := r.MapIPs["ip6:2:2:2:2::::"]; ok {
@@ -250,8 +250,8 @@ func TestFlattenRedirects(t *testing.T) {
 	}
 	// Test that redirects are ignored if SPF record includes `all` mechanism
 	r.MapIPs = map[string]bool{}
-	err = r.FlattenSPF(domain, spf+" ~all")
-	if err = r.compareExpected(err, "", []string{"ip4:9.9.9.9"}, []string{}); err != nil {
+	err = r.FlattenSPF(domain, spf+" ~all", true)
+	if err = r.compareExpected(err, " ~all", []string{"ip4:9.9.9.9"}, []string{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.MapIPs) > 2 {
@@ -270,7 +270,7 @@ func TestFlattenModifiers(t *testing.T) {
 			expIPs = append(expIPs, writeIPMech(ip, ""))
 		}
 	}
-	err := r.FlattenSPF(domain, spf)
+	err := r.FlattenSPF(domain, spf, true)
 	if err = r.compareExpected(err, " -all", expIPs, []string{}); err != nil {
 		t.Fatal(err)
 	}
