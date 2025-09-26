@@ -36,7 +36,7 @@ func GetLogLevel(inputLevel string) (slog.Level, error) {
 func GetDomainSPFRecord(domain string, lookupIF Lookup) (string, error) {
 	txtRecords, err := lookupIF.LookupTXT(domain)
 	if err != nil {
-		return "", fmt.Errorf("could not look up SPF record for %s: %s\n", domain, err)
+		return "", fmt.Errorf("could not look up SPF record for %s: %s", domain, err)
 	}
 	for _, record := range txtRecords {
 		// TBD: check that only one SPF record lookupexists for domain and fail otherwise?

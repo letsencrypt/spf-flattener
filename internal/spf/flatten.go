@@ -59,18 +59,18 @@ var modifierRegex = regexp.MustCompile(`^(\+|-|~|\?)$`)
 // Lookup or check SPF record for domain, then parse each mechanism.
 // This runs recursively until every mechanism is added either to
 // r.AllMechanism, r.MapIPs, or r.MapNonflat (or ignored)
-func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
+func (r *RootSPF) FlattenSPF(domain, spfRecord string, includeAll bool) error {
 	slog.Debug("--- Flattening domain ---", "domain", domain)
 	if spfRecord == "" {
 		record, err := GetDomainSPFRecord(domain, r.LookupIF)
 		if err != nil {
-			return fmt.Errorf("could not get SPF record for %s: %s\n", domain, err)
+			return fmt.Errorf("could not get SPF record for %s: %s", domain, err)
 		}
 		spfRecord = record
 	} else {
 		spfRecord = strings.ReplaceAll(spfRecord, "\n", " ")
 		if err := CheckSPFRecord(domain, spfRecord, r.LookupIF); err != nil {
-			return fmt.Errorf("invalid SPF record for %s: %s\n", domain, err)
+			return fmt.Errorf("invalid SPF record for %s: %s", domain, err)
 		}
 	}
 	containsAll := allInRecordRegex.MatchString(spfRecord)
@@ -93,9 +93,9 @@ func (r *RootSPF) FlattenSPF(domain, spfRecord string) error {
 			continue
 		}
 		// Parse mechanism
-		err := r.ParseMechanism(strings.TrimSpace(mechanism), domain)
+		err := r.ParseMechanism(strings.TrimSpace(mechanism), domain, includeAll)
 		if err != nil {
-			return fmt.Errorf("could not flatten SPF record for %s: %s\n", domain, err)
+			return fmt.Errorf("could not flatten SPF record for %s: %s", domain, err)
 		}
 		// Skip all mechanisms after `redirect`
 		if isRedirect {
@@ -114,15 +114,16 @@ var mxPrefixRegex = regexp.MustCompile(`^mx/\d{1,3}`)
 var mxDomainRegex = regexp.MustCompile(`mx:.*$`)
 var mxDomainPrefixRegex = regexp.MustCompile(`^mx:.*/\d{1,3}$`)
 var nonflatRegex = regexp.MustCompile(`^(ptr:|exists:|exp=).*$`)
-var includeOrRedirectRegex = regexp.MustCompile(`^(include:|redirect=).*$`)
+var includeRegex = regexp.MustCompile(`^include:.*$`)
+var redirectRegex = regexp.MustCompile(`^redirect=.*$`)
 
 // Parse the given mechanism and dispatch it accordingly
-func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
+func (r *RootSPF) ParseMechanism(mechanism, domain string, includeAll bool) error {
 	lastSlashIndex := strings.LastIndex(mechanism, "/")
 	switch {
-	// Copy `all` mechanism if set by ROOT_DOMAIN
+	// Copy `all` mechanism if requested
 	case allRegex.MatchString(mechanism):
-		if domain == r.RootDomain {
+		if includeAll {
 			slog.Debug("Setting `all` mechanism", "mechanism", mechanism)
 			r.AllMechanism = " " + mechanism
 		}
@@ -154,9 +155,11 @@ func (r *RootSPF) ParseMechanism(mechanism, domain string) error {
 	case nonflatRegex.MatchString(mechanism):
 		slog.Debug("Adding nonflat mechanism", "mechanism", mechanism)
 		r.MapNonflat[mechanism] = true
-	// Recursive call to FlattenSPF on `include` and `redirect` mechanism
-	case includeOrRedirectRegex.MatchString(mechanism):
-		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "")
+	// Recursive calls to FlattenSPF on `include` mechanism or `redirect` modifier
+	case includeRegex.MatchString(mechanism):
+		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "", false)
+	case redirectRegex.MatchString(mechanism):
+		return r.FlattenSPF(mechanism[strings.IndexAny(mechanism, ":=")+1:], "", true)
 	// Return error if no match
 	default:
 		return fmt.Errorf("received unexpected SPF mechanism or syntax: '%s'", mechanism)
@@ -169,7 +172,7 @@ func (r *RootSPF) ConvertDomainToIP(domain, prefixLength string) error {
 	slog.Debug("Looking up IP records for domain", "domain", domain)
 	ips, err := r.LookupIF.LookupIP(domain)
 	if err != nil {
-		return fmt.Errorf("could not lookup IPs for %s: %s\n", domain, err)
+		return fmt.Errorf("could not lookup IPs for %s: %s", domain, err)
 	}
 	for _, ip := range ips {
 		slog.Debug("Adding IP mechanism", "mechanism", writeIPMech(ip, prefixLength))
@@ -183,12 +186,12 @@ func (r *RootSPF) ConvertMxToIP(domain, prefixLength string) error {
 	slog.Debug("Looking up MX records for domain", "domain", domain)
 	mxs, err := r.LookupIF.LookupMX(domain)
 	if err != nil {
-		return fmt.Errorf("could not lookup MX records for %s: %s\n", domain, err)
+		return fmt.Errorf("could not lookup MX records for %s: %s", domain, err)
 	}
 	for _, mx := range mxs {
 		slog.Debug("Found MX record for domain", "mx_record", mx.Host)
 		if err := r.ConvertDomainToIP(mx.Host, prefixLength); err != nil {
-			return fmt.Errorf("could not lookup IPs for MX record `%s`: %s\n", mx.Host, err)
+			return fmt.Errorf("could not lookup IPs for MX record `%s`: %s", mx.Host, err)
 		}
 	}
 	return nil
