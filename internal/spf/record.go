@@ -71,12 +71,10 @@ func CompareRecords(startSPF, endSPF string) (bool, string, string) {
 	for i < len(startList) || j < len(endList) {
 		switch {
 		case i < len(startList) && (j == len(endList) || startList[i] < endList[j]):
-			inStart.WriteString(startList[i])
-			inStart.WriteString(" ")
+			inStart.WriteString(startList[i] + " ")
 			i++
 		case j < len(endList) && (i == len(startList) || startList[i] > endList[j]):
-			inEnd.WriteString(endList[j])
-			inStart.WriteString(" ")
+			inEnd.WriteString(endList[j] + " ")
 			j++
 		default:
 			i++
