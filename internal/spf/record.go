@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -70,10 +71,12 @@ func CompareRecords(startSPF, endSPF string) (bool, string, string) {
 	for i < len(startList) || j < len(endList) {
 		switch {
 		case i < len(startList) && (j == len(endList) || startList[i] < endList[j]):
-			inStart.WriteString(startList[i] + " ")
+			inStart.WriteString(startList[i])
+			inStart.WriteString(" ")
 			i++
 		case j < len(endList) && (i == len(startList) || startList[i] > endList[j]):
-			inEnd.WriteString(endList[j] + " ")
+			inEnd.WriteString(endList[j])
+			inStart.WriteString(" ")
 			j++
 		default:
 			i++
@@ -98,7 +101,11 @@ func MakeHTTPRequest(url, kind, authEmail, authKey string, body io.Reader, targe
 	if err != nil {
 		return fmt.Errorf("could not make HTTP request: %s", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			log.Printf("error while closing HTTP request: %s", err)
+		}
+	}()
 	if res.StatusCode != 200 {
 		return fmt.Errorf("HTTP request unsuccessful: got status code %d", res.StatusCode)
 	}
